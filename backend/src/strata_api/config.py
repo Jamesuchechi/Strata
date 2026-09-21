@@ -18,8 +18,13 @@ class Settings(BaseSettings):
         "http://127.0.0.1:3000",
     ]
 
-    # Database
-    DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/strata"
+    # Database (Defaults to SQLite for instant local dev, easily overridden with PostgreSQL)
+    DATABASE_URL: str = "sqlite+aiosqlite:///./data/strata.db"
+
+    # Security & JWT Auth
+    JWT_SECRET_KEY: str = "strata_super_secret_jwt_key_development_only_change_in_prod"
+    JWT_ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
 
     # Storage (S3 / MinIO / Local)
     STORAGE_BACKEND: str = "local"  # "local" or "s3"

@@ -2,9 +2,8 @@
 
 from datetime import datetime
 from sqlalchemy import Column, String, Integer, DateTime, ForeignKey, Text, JSON
-from sqlalchemy.orm import declarative_base, relationship
-
-Base = declarative_base()
+from sqlalchemy.orm import relationship
+from strata_api.core.database import Base
 
 
 class DatasetModel(Base):

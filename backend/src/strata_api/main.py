@@ -1,15 +1,24 @@
-"""FastAPI application entrypoint for Strata."""
-
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from strata_api.config import settings
+from strata_api.core.database import init_db
 from strata_api.routers import (
     health_router,
     preview_router,
     query_router,
     datasets_router,
     diff_router,
+    auth_router,
 )
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application lifespan context for startup and shutdown tasks."""
+    # Ensure database tables exist
+    await init_db()
+    yield
 
 
 def create_app() -> FastAPI:
@@ -20,6 +29,7 @@ def create_app() -> FastAPI:
         version="0.1.0",
         openapi_url=f"{settings.API_V1_PREFIX}/openapi.json",
         docs_url=f"{settings.API_V1_PREFIX}/docs",
+        lifespan=lifespan,
     )
 
     # CORS Middleware
@@ -37,6 +47,7 @@ def create_app() -> FastAPI:
     app.include_router(query_router, prefix=settings.API_V1_PREFIX)
     app.include_router(datasets_router, prefix=settings.API_V1_PREFIX)
     app.include_router(diff_router, prefix=settings.API_V1_PREFIX)
+    app.include_router(auth_router, prefix=settings.API_V1_PREFIX)
 
     @app.get("/")
     async def root():
