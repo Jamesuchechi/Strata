@@ -1,0 +1,66 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+/build/
+/dist/
+develop-eggs/
+downloads/
+eggs/
+.eggs/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+.venv/
+venv/
+env/
+ENV/
+
+# UV
+.uv/
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Node & Next.js
+node_modules/
+.next/
+/out/
+.npm
+*.tsbuildinfo
+next-env.d.ts
+
+# Environments & Secrets
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# Data & Scratch Files (Root storage / local databases)
+/data/
+/scratch/
+*.duckdb
+*.db
+*.sqlite
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Docker
+docker/data/
