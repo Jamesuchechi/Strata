@@ -91,7 +91,7 @@ async def register(
             detail="An account with this email address already exists. Please sign in instead.",
         )
 
-    # Create new user
+    # Create new user (automatically verified for frictionless dev & demo onboarding)
     user = UserModel(
         email=clean_email,
         full_name=payload.full_name.strip(),

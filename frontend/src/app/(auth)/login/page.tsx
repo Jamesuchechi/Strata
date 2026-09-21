@@ -33,8 +33,8 @@ export default function LoginPage() {
           password,
           remember_me: rememberMe,
         });
-        // Success redirect
-        router.push("/");
+        // Success redirect to studio dashboard
+        router.push("/dashboard");
       }
     } catch (err: any) {
       setErrorMessage(err.message || "Failed to authenticate. Please check your credentials.");

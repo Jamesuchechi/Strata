@@ -24,6 +24,9 @@ dependencies = [
     "uvicorn[standard]>=0.32.0",
 ]
 
+[project.scripts]
+strata-api = "strata_api.main:start"
+
 [dependency-groups]
 dev = [
     "pytest>=9.1.1",

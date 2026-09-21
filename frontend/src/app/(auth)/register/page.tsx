@@ -65,10 +65,16 @@ export default function RegisterPage() {
           </p>
           <div className="space-y-3">
             <Link
-              href="/login"
-              className="block w-full rounded-xl bg-[#1E1915] px-4 py-3 text-center text-sm font-semibold text-white shadow-sm hover:bg-black transition-colors"
+              href="/dashboard"
+              className="block w-full rounded-xl bg-[#0061FE] px-4 py-3 text-center text-sm font-semibold text-white shadow-md shadow-[#0061FE]/25 hover:bg-[#0052D4] transition-colors"
             >
-              Proceed to Sign In
+              Enter Studio Dashboard
+            </Link>
+            <Link
+              href="/login"
+              className="block w-full rounded-xl bg-[#1E1915]/5 hover:bg-[#1E1915]/10 px-4 py-2 text-center text-xs font-semibold text-[#1E1915] transition-colors"
+            >
+              Sign In with different account
             </Link>
             <button
               onClick={() => setIsSuccess(false)}
