@@ -1,460 +1,374 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import Link from "next/link";
 import {
-  FileSpreadsheet,
+  LayoutDashboard,
+  Upload,
   Database,
   Code2,
-  Table as TableIcon,
-  BarChart3,
-  SlidersHorizontal,
-  Download,
-  Filter,
-  ArrowUpDown,
-  Search,
-  Plus,
-  GitBranch,
   Sparkles,
-  Check,
-  ChevronDown,
+  GitBranch,
+  ArrowRight,
+  Plus,
+  Zap,
+  HardDrive,
+  Layers,
+  FileSpreadsheet,
+  CheckCircle2,
+  Clock,
+  ShieldCheck,
+  TrendingUp,
+  Atom,
+  MapPin,
+  FileText,
 } from "lucide-react";
+import { fetchDatasets, fetchCommits, getStoredUser } from "@/lib/api";
+import { DatasetItem } from "@/lib/types";
 
-export default function DashboardPage() {
-  const [activeTab, setActiveTab] = useState("orders_q3");
-  const [viewMode, setViewMode] = useState<"grid" | "schema" | "profiler" | "charts">("grid");
-  const [activeSheet, setActiveSheet] = useState("Transactions");
-  const [searchFilter, setSearchFilter] = useState("");
-  const [selectedColumn, setSelectedColumn] = useState<string>("revenue_usd");
+export default function DashboardOverviewPage() {
+  const [datasets, setDatasets] = useState<DatasetItem[]>([]);
+  const [commits, setCommits] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [user, setUser] = useState<ReturnType<typeof getStoredUser>>(null);
 
-  const tabs = [
-    { id: "orders_q3", title: "orders_q3_2026.xlsx", type: "excel" },
-    { id: "telecom_churn", title: "telecom_churn.parquet", type: "parquet" },
-    { id: "sql_cohort", title: "SQL: Top Cohorts", type: "sql" },
+  useEffect(() => {
+    setUser(getStoredUser());
+    Promise.all([
+      fetchDatasets().catch((err) => {
+        console.error("Failed to fetch datasets in overview:", err);
+        return [] as DatasetItem[];
+      }),
+      fetchCommits().catch((err) => {
+        console.error("Failed to fetch commits in overview:", err);
+        return [] as any[];
+      }),
+    ])
+      .then(([ds, cm]) => {
+        setDatasets(ds);
+        setCommits(cm);
+      })
+      .finally(() => setIsLoading(false));
+  }, []);
+
+  const totalRows = datasets.reduce((acc, d) => acc + (d.total_rows || 0), 0);
+  const totalBytes = datasets.reduce((acc, d) => acc + (d.size_bytes || 0), 0);
+
+  const formatSize = (bytes: number) => {
+    if (!bytes) return "0 KB";
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  const getFormatIcon = (format: string) => {
+    switch (format.toLowerCase()) {
+      case "excel":
+        return <FileSpreadsheet className="w-4 h-4 text-emerald-600" />;
+      case "parquet":
+        return <Database className="w-4 h-4 text-[#0061FE]" />;
+      case "sdf":
+        return <Atom className="w-4 h-4 text-purple-600" />;
+      case "geojson":
+        return <MapPin className="w-4 h-4 text-rose-600" />;
+      default:
+        return <FileText className="w-4 h-4 text-blue-600" />;
+    }
+  };
+
+  const quickLinks = [
+    {
+      title: "Upload & Ingest",
+      desc: "Drag & drop CSV, Excel, Parquet, SDF, or GeoJSON with instant schema indexing.",
+      href: "/upload",
+      icon: <Upload className="w-5 h-5 text-[#0061FE]" />,
+      badge: "Ingestion Studio",
+      color: "border-[#0061FE]/20 hover:border-[#0061FE]",
+    },
+    {
+      title: "Datasets Lakehouse",
+      desc: "Explore table schemas, virtual rows, quality scores, and micro-stat sparklines.",
+      href: "/datasets",
+      icon: <Database className="w-5 h-5 text-emerald-600" />,
+      badge: `${datasets.length} Tables Active`,
+      color: "border-emerald-200 hover:border-emerald-500",
+    },
+    {
+      title: "DuckDB SQL Studio",
+      desc: "Run sub-second analytical queries against zero-copy in-memory Arrow buffers.",
+      href: "/query",
+      icon: <Code2 className="w-5 h-5 text-amber-600" />,
+      badge: "WASM Engine",
+      color: "border-amber-200 hover:border-amber-500",
+    },
+    {
+      title: "Conversational AI Analyst",
+      desc: "Ask questions in plain English; get verified SQL execution with zero hallucinations.",
+      href: "/analyst",
+      icon: <Sparkles className="w-5 h-5 text-purple-600" />,
+      badge: "AI Grounded",
+      color: "border-purple-200 hover:border-purple-500",
+    },
   ];
 
-  const sheets = ["Summary", "Transactions", "COGS", "Assumptions"];
-
-  const columns = [
-    { name: "order_id", type: "INT64", pii: false },
-    { name: "customer_name", type: "VARCHAR", pii: true },
-    { name: "transaction_date", type: "TIMESTAMP", pii: false },
-    { name: "sku_category", type: "VARCHAR", pii: false },
-    { name: "quantity", type: "INT32", pii: false },
-    { name: "unit_price", type: "DOUBLE", pii: false },
-    { name: "revenue_usd", type: "DOUBLE", pii: false },
-    { name: "payment_status", type: "VARCHAR", pii: false },
-    { name: "delivery_state", type: "VARCHAR", pii: false },
-  ];
-
-  const mockRows = [
-    {
-      order_id: 104291,
-      customer_name: "Eleanor Vance",
-      transaction_date: "2026-09-14 14:22:01",
-      sku_category: "Cloud Compute",
-      quantity: 4,
-      unit_price: 340.0,
-      revenue_usd: 1360.0,
-      payment_status: "COMPLETED",
-      delivery_state: "CA",
-    },
-    {
-      order_id: 104292,
-      customer_name: "Marcus Thorne",
-      transaction_date: "2026-09-14 14:25:34",
-      sku_category: "GPU Clusters",
-      quantity: 2,
-      unit_price: 2400.0,
-      revenue_usd: 4800.0,
-      payment_status: "COMPLETED",
-      delivery_state: "NY",
-    },
-    {
-      order_id: 104293,
-      customer_name: "Sophia Sterling",
-      transaction_date: "2026-09-14 14:29:10",
-      sku_category: "Storage Volume",
-      quantity: 12,
-      unit_price: 45.5,
-      revenue_usd: 546.0,
-      payment_status: "SETTLED",
-      delivery_state: "TX",
-    },
-    {
-      order_id: 104294,
-      customer_name: "Liam O'Connor",
-      transaction_date: "2026-09-14 14:31:45",
-      sku_category: "Edge Analytics",
-      quantity: 1,
-      unit_price: 890.0,
-      revenue_usd: 890.0,
-      payment_status: "COMPLETED",
-      delivery_state: "WA",
-    },
-    {
-      order_id: 104295,
-      customer_name: "Aria Montgomery",
-      transaction_date: "2026-09-14 14:38:22",
-      sku_category: "Cloud Compute",
-      quantity: 8,
-      unit_price: 340.0,
-      revenue_usd: 2720.0,
-      payment_status: "COMPLETED",
-      delivery_state: "IL",
-    },
-    {
-      order_id: 104296,
-      customer_name: "Devon Chen",
-      transaction_date: "2026-09-14 14:41:09",
-      sku_category: "GPU Clusters",
-      quantity: 1,
-      unit_price: 2400.0,
-      revenue_usd: 2400.0,
-      payment_status: "PENDING",
-      delivery_state: "MA",
-    },
-    {
-      order_id: 104297,
-      customer_name: "Maya Lin",
-      transaction_date: "2026-09-14 14:45:50",
-      sku_category: "Storage Volume",
-      quantity: 20,
-      unit_price: 45.5,
-      revenue_usd: 910.0,
-      payment_status: "COMPLETED",
-      delivery_state: "CO",
-    },
-    {
-      order_id: 104298,
-      customer_name: "Julian Rivera",
-      transaction_date: "2026-09-14 14:50:18",
-      sku_category: "Edge Analytics",
-      quantity: 3,
-      unit_price: 890.0,
-      revenue_usd: 2670.0,
-      payment_status: "COMPLETED",
-      delivery_state: "FL",
-    },
-  ];
+  const realActivity = [
+    ...commits.map((c) => ({
+      action: `Snapshot Committed (${c.version})`,
+      detail: c.message,
+      time: c.date,
+      icon: <GitBranch className="w-3.5 h-3.5 text-purple-600" />,
+      link: "/versions",
+    })),
+    ...datasets.map((d) => ({
+      action: "Dataset Ingested",
+      detail: `${d.filename} registered in DuckDB with ${(d.total_rows || 0).toLocaleString()} rows`,
+      time: d.created_at ? new Date(d.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "Active",
+      icon: getFormatIcon(d.format),
+      link: `/datasets/${d.id}`,
+    })),
+  ].slice(0, 6);
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-[#FAF8F5]">
-      {/* 1. Editor Tab Bar */}
-      <div className="flex items-center justify-between border-b border-[#E8E4DF] bg-[#EFECE6]/50 px-3 pt-2">
-        <div className="flex items-center gap-1.5 overflow-x-auto">
-          {tabs.map((tab) => {
-            const isActive = activeTab === tab.id;
-            return (
-              <div
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-t-xl text-xs font-semibold cursor-pointer border-t border-x transition-all ${
-                  isActive
-                    ? "bg-[#FAF8F5] border-[#E8E4DF] text-[#1E1915] shadow-2xs"
-                    : "border-transparent text-[#736B63] hover:text-[#1E1915] hover:bg-white/40"
-                }`}
-              >
-                {tab.type === "excel" && <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />}
-                {tab.type === "parquet" && <Database className="w-3.5 h-3.5 text-[#0061FE]" />}
-                {tab.type === "sql" && <Code2 className="w-3.5 h-3.5 text-amber-600" />}
-                <span>{tab.title}</span>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    alert(`Closed ${tab.title}`);
-                  }}
-                  className="w-4 h-4 rounded hover:bg-[#E8E4DF] flex items-center justify-center text-[10px] text-[#8C827A]"
-                >
-                  ×
-                </button>
-              </div>
-            );
-          })}
-
-          <button
-            onClick={() => alert("Open new dataset tab")}
-            className="p-1 rounded-lg hover:bg-[#EFECE6] text-[#736B63] text-xs font-semibold ml-1"
-          >
-            <Plus className="w-3.5 h-3.5" />
-          </button>
+    <div className="p-6 max-w-7xl mx-auto space-y-8 animate-in fade-in duration-200">
+      {/* Overview Welcome Banner */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#E8E4DF] pb-6">
+        <div>
+          <div className="flex items-center gap-2 text-xs font-mono text-[#8C827A] uppercase tracking-wider mb-1.5">
+            <LayoutDashboard className="w-3.5 h-3.5 text-[#0061FE]" />
+            <span>Workspace</span>
+            <span>/</span>
+            <span className="text-[#0061FE] font-bold">Studio Overview</span>
+          </div>
+          <h1 className="text-2xl sm:text-3xl font-serif font-bold text-[#1E1915]">
+            Welcome back{user?.full_name ? `, ${user.full_name}` : ""}
+          </h1>
+          <p className="text-xs sm:text-sm text-[#5C554D] mt-1 max-w-2xl">
+            Here is the current state of your analytical workspace, active DuckDB tables, and version lineage.
+          </p>
         </div>
 
-        {/* Quick Toolbar Actions */}
-        <div className="flex items-center gap-2 pb-1.5">
-          <button
-            onClick={() => alert("Creating dataset version snapshot...")}
-            className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-[#E8E4DF] bg-white hover:bg-[#FAF8F5] text-xs font-semibold text-[#1E1915] shadow-2xs"
+        <div className="flex items-center gap-2.5 shrink-0">
+          <Link
+            href="/upload"
+            className="px-4 py-2 rounded-xl bg-[#0061FE] hover:bg-[#0052D4] text-white text-xs font-semibold flex items-center gap-2 shadow-sm shadow-[#0061FE]/20 transition-all cursor-pointer"
           >
-            <GitBranch className="w-3 h-3 text-[#0061FE]" />
-            <span>Snapshot</span>
-          </button>
-          <button
-            onClick={() => alert("Exporting Parquet...")}
-            className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-[#E8E4DF] bg-white hover:bg-[#FAF8F5] text-xs font-semibold text-[#1E1915] shadow-2xs"
+            <Plus className="w-3.5 h-3.5" />
+            <span>Upload Dataset</span>
+          </Link>
+          <Link
+            href="/query"
+            className="px-4 py-2 rounded-xl border border-[#E8E4DF] bg-white hover:bg-[#FAF8F5] text-xs font-semibold text-[#1E1915] flex items-center gap-1.5 transition-colors"
           >
-            <Download className="w-3 h-3 text-[#5C554D]" />
-            <span>Export</span>
-          </button>
+            <Code2 className="w-3.5 h-3.5 text-[#0061FE]" />
+            <span>New SQL Query</span>
+          </Link>
         </div>
       </div>
 
-      {/* 2. Canvas Sub-Toolbar: View Switcher & Filters */}
-      <div className="p-3 border-b border-[#E8E4DF] bg-white flex flex-wrap items-center justify-between gap-3 select-none">
-        {/* View Switcher (Grid vs Schema vs Profiler vs Charts) */}
-        <div className="flex p-1 rounded-xl bg-[#FAF8F5] border border-[#E8E4DF] text-xs font-semibold">
-          {[
-            { id: "grid", label: "Data Grid", icon: <TableIcon className="w-3.5 h-3.5" /> },
-            { id: "schema", label: "Schema", icon: <Code2 className="w-3.5 h-3.5" /> },
-            { id: "profiler", label: "Profiler", icon: <BarChart3 className="w-3.5 h-3.5" /> },
-            { id: "charts", label: "Visualizer", icon: <SlidersHorizontal className="w-3.5 h-3.5" /> },
-          ].map((mode) => (
-            <button
-              key={mode.id}
-              onClick={() => setViewMode(mode.id as any)}
-              className={`flex items-center gap-1.5 px-3 py-1 rounded-lg transition-all ${
-                viewMode === mode.id
-                  ? "bg-white text-[#0061FE] font-bold shadow-2xs border border-[#E8E4DF]"
-                  : "text-[#736B63] hover:text-[#1E1915]"
-              }`}
-            >
-              {mode.icon}
-              <span>{mode.label}</span>
-            </button>
-          ))}
-        </div>
-
-        {/* Filter & Search Bar */}
-        <div className="flex items-center gap-2 flex-1 max-w-sm">
-          <div className="relative w-full">
-            <Search className="w-3.5 h-3.5 text-[#8C827A] absolute left-3 top-2.5" />
-            <input
-              type="text"
-              value={searchFilter}
-              onChange={(e) => setSearchFilter(e.target.value)}
-              placeholder="Filter rows (e.g. quantity > 5)..."
-              className="w-full bg-[#FAF8F5] border border-[#E8E4DF] rounded-xl pl-8 pr-3 py-1.5 text-xs text-[#1E1915] focus:bg-white focus:outline-none focus:border-[#0061FE]"
-            />
+      {/* KPI Stats Grid */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="p-4 rounded-2xl bg-white border border-[#E8E4DF] shadow-2xs space-y-1">
+          <div className="flex items-center justify-between text-xs text-[#8C827A]">
+            <span>Active Datasets</span>
+            <Database className="w-4 h-4 text-[#0061FE]" />
+          </div>
+          <div className="text-2xl font-serif font-bold text-[#1E1915]">
+            {isLoading ? "..." : datasets.length}
+          </div>
+          <div className="text-[11px] text-[#057A55] font-medium flex items-center gap-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+            <span>All registered in DuckDB</span>
           </div>
         </div>
 
-        {/* Dataset Stats */}
-        <div className="flex items-center gap-3 text-xs font-mono text-[#736B63]">
-          <span>84,200 rows</span>
-          <span>·</span>
-          <span>14 cols</span>
-          <span>·</span>
-          <span className="text-emerald-700 font-semibold">DuckDB 8.4ms</span>
+        <div className="p-4 rounded-2xl bg-white border border-[#E8E4DF] shadow-2xs space-y-1">
+          <div className="flex items-center justify-between text-xs text-[#8C827A]">
+            <span>Cached Virtual Rows</span>
+            <Layers className="w-4 h-4 text-emerald-600" />
+          </div>
+          <div className="text-2xl font-serif font-bold text-[#1E1915]">
+            {isLoading ? "..." : totalRows.toLocaleString()}
+          </div>
+          <div className="text-[11px] text-[#736B63] font-mono">
+            Zero-copy memory pool
+          </div>
+        </div>
+
+        <div className="p-4 rounded-2xl bg-white border border-[#E8E4DF] shadow-2xs space-y-1">
+          <div className="flex items-center justify-between text-xs text-[#8C827A]">
+            <span>Vectorized Query Engine</span>
+            <Zap className="w-4 h-4 text-amber-500" />
+          </div>
+          <div className="text-2xl font-serif font-bold text-[#1E1915]">
+            &lt; 2ms Latency
+          </div>
+          <div className="text-[11px] text-[#057A55] font-medium">
+            DuckDB 1.5 WASM + API
+          </div>
+        </div>
+
+        <div className="p-4 rounded-2xl bg-white border border-[#E8E4DF] shadow-2xs space-y-1">
+          <div className="flex items-center justify-between text-xs text-[#8C827A]">
+            <span>Git Version Lineage</span>
+            <GitBranch className="w-4 h-4 text-purple-600" />
+          </div>
+          <div className="text-2xl font-serif font-bold text-[#1E1915]">
+            {isLoading ? "..." : (commits[0]?.version ? `main @ ${commits[0].version}` : "main @ clean")}
+          </div>
+          <div className="text-[11px] text-[#736B63] font-mono">
+            {isLoading ? "..." : `${commits.length} immutable snapshot${commits.length === 1 ? "" : "s"}`}
+          </div>
         </div>
       </div>
 
-      {/* 3. Main Content: Virtualized Data Grid */}
-      <div className="flex-1 overflow-auto bg-white">
-        {viewMode === "grid" && (
-          <table className="w-full border-collapse text-left text-xs font-mono">
-            {/* Table Header */}
-            <thead>
-              <tr className="border-b border-[#E8E4DF] bg-[#FAF8F5] sticky top-0 z-10">
-                <th className="py-2.5 px-3 text-[#8C827A] font-semibold border-r border-[#E8E4DF] w-12 text-center">
-                  #
-                </th>
-                {columns.map((col) => {
-                  const isSelected = selectedColumn === col.name;
-                  return (
-                    <th
-                      key={col.name}
-                      onClick={() => setSelectedColumn(col.name)}
-                      className={`py-2.5 px-3 border-r border-[#E8E4DF] cursor-pointer transition-colors ${
-                        isSelected
-                          ? "bg-[#0061FE]/10 text-[#0061FE] font-bold"
-                          : "hover:bg-[#EFECE6] text-[#1E1915]"
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="truncate">{col.name}</span>
-                        <div className="flex items-center gap-1">
-                          <span className="text-[9px] px-1.5 py-0.2 rounded bg-white border border-[#D6D0C7] text-[#736B63]">
-                            {col.type}
-                          </span>
-                          <ArrowUpDown className="w-3 h-3 text-[#8C827A]" />
+      {/* Quick Jump Action Cards */}
+      <div className="space-y-3">
+        <h2 className="text-xs font-mono uppercase tracking-wider text-[#8C827A] font-bold">
+          Studio Navigation Hub
+        </h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          {quickLinks.map((card) => (
+            <Link
+              key={card.title}
+              href={card.href}
+              className={`p-5 rounded-2xl bg-white border shadow-2xs hover:shadow-md transition-all duration-200 flex flex-col justify-between group space-y-3 ${card.color}`}
+            >
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="p-2 rounded-xl bg-[#FAF8F5] border border-[#E8E4DF] group-hover:scale-105 transition-transform">
+                    {card.icon}
+                  </div>
+                  <span className="text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded-full bg-[#FAF8F5] border border-[#E8E4DF] text-[#736B63]">
+                    {card.badge}
+                  </span>
+                </div>
+                <h3 className="text-sm font-bold text-[#1E1915] group-hover:text-[#0061FE] transition-colors">
+                  {card.title}
+                </h3>
+                <p className="text-xs text-[#5C554D] leading-relaxed">
+                  {card.desc}
+                </p>
+              </div>
+
+              <div className="flex items-center text-xs font-bold text-[#0061FE] pt-2 border-t border-[#E8E4DF]/60">
+                <span>Launch</span>
+                <ArrowRight className="w-3.5 h-3.5 ml-1 group-hover:translate-x-1 transition-transform" />
+              </div>
+            </Link>
+          ))}
+        </div>
+      </div>
+
+      {/* Two Column Section: Recent Datasets + Activity Feed */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Recent Datasets Table (2 Cols) */}
+        <div className="lg:col-span-2 space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xs font-mono uppercase tracking-wider text-[#8C827A] font-bold">
+              Active Studio Datasets
+            </h2>
+            <Link
+              href="/datasets"
+              className="text-xs font-semibold text-[#0061FE] hover:underline flex items-center gap-1"
+            >
+              <span>View All ({datasets.length})</span>
+              <ArrowRight className="w-3 h-3" />
+            </Link>
+          </div>
+
+          <div className="rounded-2xl bg-white border border-[#E8E4DF] overflow-hidden shadow-2xs">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-[#FAF8F5] border-b border-[#E8E4DF] text-[10px] font-mono uppercase text-[#8C827A]">
+                <tr>
+                  <th className="py-2.5 px-4">Dataset</th>
+                  <th className="py-2.5 px-3">Format</th>
+                  <th className="py-2.5 px-3">Rows</th>
+                  <th className="py-2.5 px-3">Quality</th>
+                  <th className="py-2.5 px-4 text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#E8E4DF]">
+                {datasets.slice(0, 4).map((ds) => (
+                  <tr key={ds.id} className="hover:bg-[#FAF8F5]/80 transition-colors">
+                    <td className="py-3 px-4">
+                      <div className="flex items-center gap-2.5">
+                        <div className="p-1.5 rounded-lg bg-[#FAF8F5] border border-[#E8E4DF]">
+                          {getFormatIcon(ds.format)}
+                        </div>
+                        <div>
+                          <div className="font-bold text-[#1E1915]">{ds.name}</div>
+                          <div className="text-[10px] text-[#8C827A] font-mono">{ds.filename}</div>
                         </div>
                       </div>
-                    </th>
-                  );
-                })}
-              </tr>
-            </thead>
-
-            {/* Table Body */}
-            <tbody className="divide-y divide-[#E8E4DF]/60">
-              {mockRows.map((row, idx) => (
-                <tr key={idx} className="hover:bg-[#0061FE]/[0.03] transition-colors">
-                  <td className="py-2 px-3 text-[#8C827A] border-r border-[#E8E4DF] text-center font-semibold bg-[#FAF8F5]/50">
-                    {idx + 1}
-                  </td>
-                  <td className="py-2 px-3 border-r border-[#E8E4DF] font-bold text-[#1E1915]">
-                    {row.order_id}
-                  </td>
-                  <td className="py-2 px-3 border-r border-[#E8E4DF] text-[#1E1915]">
-                    {row.customer_name}
-                  </td>
-                  <td className="py-2 px-3 border-r border-[#E8E4DF] text-[#5C554D]">
-                    {row.transaction_date}
-                  </td>
-                  <td className="py-2 px-3 border-r border-[#E8E4DF] text-[#1E1915]">
-                    {row.sku_category}
-                  </td>
-                  <td className="py-2 px-3 border-r border-[#E8E4DF] text-right text-[#1E1915]">
-                    {row.quantity}
-                  </td>
-                  <td className="py-2 px-3 border-r border-[#E8E4DF] text-right font-semibold text-[#1E1915]">
-                    ${row.unit_price.toFixed(2)}
-                  </td>
-                  <td className="py-2 px-3 border-r border-[#E8E4DF] text-right font-bold text-emerald-700 bg-emerald-50/30">
-                    ${row.revenue_usd.toFixed(2)}
-                  </td>
-                  <td className="py-2 px-3 border-r border-[#E8E4DF]">
-                    <span className="px-2 py-0.5 rounded-full bg-emerald-100/80 text-emerald-800 text-[10px] font-bold">
-                      {row.payment_status}
-                    </span>
-                  </td>
-                  <td className="py-2 px-3 border-r border-[#E8E4DF] text-center font-bold text-[#1E1915]">
-                    {row.delivery_state}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-
-        {/* Schema View */}
-        {viewMode === "schema" && (
-          <div className="p-6 max-w-4xl space-y-4">
-            <h3 className="font-serif text-lg font-bold text-[#1E1915]">Table Schema & Constraints</h3>
-            <div className="rounded-2xl border border-[#E8E4DF] overflow-hidden">
-              <table className="w-full text-left text-xs font-mono">
-                <thead className="bg-[#FAF8F5] border-b border-[#E8E4DF]">
-                  <tr>
-                    <th className="p-3">Column Name</th>
-                    <th className="p-3">DuckDB Type</th>
-                    <th className="p-3">Nullable</th>
-                    <th className="p-3">Compliance</th>
+                    </td>
+                    <td className="py-3 px-3 font-mono uppercase text-[10px] text-[#736B63]">
+                      {ds.format}
+                    </td>
+                    <td className="py-3 px-3 font-mono font-semibold text-[#1E1915]">
+                      {ds.total_rows.toLocaleString()}
+                    </td>
+                    <td className="py-3 px-3">
+                      {ds.quality_score ? (
+                        <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-semibold text-[10px] border border-emerald-200">
+                          {ds.quality_score}% Clean
+                        </span>
+                      ) : (
+                        <span className="text-[#8C827A]">—</span>
+                      )}
+                    </td>
+                    <td className="py-3 px-4 text-right">
+                      <Link
+                        href={`/datasets/${ds.id}`}
+                        className="px-2.5 py-1 rounded-lg bg-[#0061FE]/10 text-[#0061FE] font-semibold text-xs hover:bg-[#0061FE] hover:text-white transition-all inline-block"
+                      >
+                        Preview
+                      </Link>
+                    </td>
                   </tr>
-                </thead>
-                <tbody className="divide-y divide-[#E8E4DF]">
-                  {columns.map((col) => (
-                    <tr key={col.name} className="hover:bg-[#FAF8F5]">
-                      <td className="p-3 font-bold text-[#1E1915]">{col.name}</td>
-                      <td className="p-3 text-[#0061FE]">{col.type}</td>
-                      <td className="p-3 text-[#736B63]">YES</td>
-                      <td className="p-3">
-                        {col.pii ? (
-                          <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-800 text-[10px] font-semibold">
-                            PII (Name)
-                          </span>
-                        ) : (
-                          <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 text-[10px] font-semibold">
-                            Safe
-                          </span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {/* Profiler View */}
-        {viewMode === "profiler" && (
-          <div className="p-6 max-w-4xl space-y-6">
-            <h3 className="font-serif text-lg font-bold text-[#1E1915]">Automated Dataset Profiler</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className="p-4 rounded-2xl bg-[#FAF8F5] border border-[#E8E4DF] space-y-1">
-                <span className="text-xs text-[#736B63]">Total Volume</span>
-                <div className="text-2xl font-bold font-serif text-[#1E1915]">84,200 Rows</div>
-                <span className="text-[11px] text-emerald-600">✓ 100% In-Memory Clean</span>
-              </div>
-              <div className="p-4 rounded-2xl bg-[#FAF8F5] border border-[#E8E4DF] space-y-1">
-                <span className="text-xs text-[#736B63]">Data Quality Score</span>
-                <div className="text-2xl font-bold font-serif text-[#1E1915]">98.4 / 100</div>
-                <span className="text-[11px] text-emerald-600">0.8% missing values</span>
-              </div>
-              <div className="p-4 rounded-2xl bg-[#FAF8F5] border border-[#E8E4DF] space-y-1">
-                <span className="text-xs text-[#736B63]">Active Memory</span>
-                <div className="text-2xl font-bold font-serif text-[#1E1915]">14.2 MB</div>
-                <span className="text-[11px] text-[#0061FE]">Zero cloud egress</span>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Charts View */}
-        {viewMode === "charts" && (
-          <div className="p-6 max-w-4xl space-y-4">
-            <h3 className="font-serif text-lg font-bold text-[#1E1915]">Quick Visualizations</h3>
-            <div className="p-6 rounded-2xl bg-white border border-[#E8E4DF] shadow-sm space-y-4">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-[#1E1915]">Revenue by SKU Category</span>
-                <span className="text-xs font-mono text-[#736B63]">SUM(revenue_usd)</span>
-              </div>
-              <div className="space-y-3 pt-2">
-                {[
-                  { name: "GPU Clusters", val: 7200, pct: 85 },
-                  { name: "Cloud Compute", val: 4080, pct: 52 },
-                  { name: "Edge Analytics", val: 3560, pct: 45 },
-                  { name: "Storage Volume", val: 1456, pct: 20 },
-                ].map((item) => (
-                  <div key={item.name} className="space-y-1">
-                    <div className="flex justify-between text-xs font-mono">
-                      <span>{item.name}</span>
-                      <span className="font-bold">${item.val.toLocaleString()}</span>
-                    </div>
-                    <div className="w-full bg-[#FAF8F5] h-2.5 rounded-full overflow-hidden">
-                      <div
-                        className="bg-[#0061FE] h-full rounded-full transition-all duration-500"
-                        style={{ width: `${item.pct}%` }}
-                      />
-                    </div>
-                  </div>
                 ))}
-              </div>
-            </div>
+              </tbody>
+            </table>
           </div>
-        )}
-      </div>
-
-      {/* 4. Bottom Multi-Sheet Switcher Bar (For Excel & Workbooks) */}
-      <div className="h-10 border-t border-[#E8E4DF] bg-[#FAF8F5] px-3 flex items-center justify-between select-none">
-        <div className="flex items-center gap-1">
-          <span className="text-[10px] font-mono uppercase tracking-wider text-[#8C827A] mr-2">
-            Sheets:
-          </span>
-          {sheets.map((sheet) => (
-            <button
-              key={sheet}
-              onClick={() => setActiveSheet(sheet)}
-              className={`px-3 py-1 rounded-md text-xs font-mono font-medium transition-colors ${
-                activeSheet === sheet
-                  ? "bg-white text-[#0061FE] font-bold shadow-2xs border border-[#E8E4DF]"
-                  : "text-[#736B63] hover:text-[#1E1915]"
-              }`}
-            >
-              {sheet}
-            </button>
-          ))}
-          <button
-            onClick={() => alert("Add Sheet dialog")}
-            className="p-1 rounded hover:bg-[#EFECE6] text-[#736B63] ml-1"
-          >
-            <Plus className="w-3.5 h-3.5" />
-          </button>
         </div>
 
-        <div className="text-[11px] font-mono text-[#8C827A]">
-          Cell selection: <span className="text-[#1E1915] font-bold">{selectedColumn}</span> · Press{" "}
-          <kbd className="px-1 py-0.5 rounded bg-white border border-[#D6D0C7] text-[10px]">⌘I</kbd> for
-          Inspector
+        {/* Activity & Timeline (1 Col) */}
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xs font-mono uppercase tracking-wider text-[#8C827A] font-bold">
+              Recent Studio Activity
+            </h2>
+            <Link
+              href="/versions"
+              className="text-xs font-semibold text-[#0061FE] hover:underline flex items-center gap-1"
+            >
+              <span>Git History</span>
+              <ArrowRight className="w-3 h-3" />
+            </Link>
+          </div>
+
+          <div className="rounded-2xl bg-white border border-[#E8E4DF] p-4 shadow-2xs space-y-3">
+            {realActivity.length === 0 ? (
+              <div className="text-center py-6 text-xs text-[#8C827A]">
+                No recent activity recorded yet. Ingest a dataset or run a query.
+              </div>
+            ) : (
+              realActivity.map((act, i) => (
+                <Link
+                  key={i}
+                  href={act.link}
+                  className="flex items-start gap-3 text-xs hover:bg-[#FAF8F5] p-1.5 rounded-xl transition-colors block"
+                >
+                  <div className="p-1.5 rounded-lg bg-[#FAF8F5] border border-[#E8E4DF] shrink-0 mt-0.5">
+                    {act.icon}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="font-bold text-[#1E1915]">{act.action}</div>
+                    <p className="text-[11px] text-[#5C554D] mt-0.5 leading-snug truncate">{act.detail}</p>
+                    <div className="text-[10px] text-[#8C827A] font-mono mt-1">{act.time}</div>
+                  </div>
+                </Link>
+              ))
+            )}
+          </div>
         </div>
       </div>
     </div>

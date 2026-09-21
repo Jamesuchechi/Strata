@@ -17,6 +17,9 @@ export interface ColumnStat {
   min?: number;
   max?: number;
   mean?: number;
+  median?: number;
+  distribution?: number[];
+  sparkline?: number[];
 }
 
 export interface QualityScore {
@@ -36,9 +39,29 @@ export interface PreviewData {
   schema_fields: ColumnSchema[];
   preview_rows: Record<string, any>[];
   sheets?: string[];
+  active_sheet?: string;
+  view_name?: string;
   column_stats?: ColumnStat[];
   pii_flags?: Record<string, string>;
   quality_score?: QualityScore;
+}
+
+export interface DatasetItem {
+  id: string;
+  name: string;
+  filename: string;
+  description?: string;
+  tags: string[];
+  format: string;
+  content_hash: string;
+  view_name?: string;
+  total_rows: number;
+  total_columns: number;
+  size_bytes: number;
+  created_at?: string;
+  quality_score?: number;
+  latest_version?: string;
+  version_count: number;
 }
 
 export interface QueryResult {

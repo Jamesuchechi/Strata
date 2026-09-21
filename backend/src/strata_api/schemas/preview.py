@@ -18,6 +18,8 @@ class PreviewResponse(BaseModel):
     schema_fields: List[ColumnSchema]
     preview_rows: List[Dict[str, Any]]
     sheets: Optional[List[str]] = None
+    active_sheet: Optional[str] = None
+    view_name: Optional[str] = None
     column_stats: Optional[List[Dict[str, Any]]] = None
     pii_flags: Optional[Dict[str, str]] = None
     quality_score: Optional[Dict[str, Any]] = None

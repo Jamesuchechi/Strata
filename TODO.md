@@ -13,10 +13,10 @@ Every feature in the master blueprint belongs to exactly one phase below. New fe
 1. Does the universal previewer (CSV, multi-sheet Excel `.xlsx`/`.xls`, Parquet) with the client-side virtual grid and hover micro-stats feel 10x faster and more convenient than opening Excel, pandas, or desktop tools?
 2. Does the conversational AI data analyst executing verified DuckDB SQL/Python queries answer real-world analytical questions accurately with zero hallucinations?
 
-- [ ] **Universal Preview Engine:** 1.7, 21.1, 21.2, 21.5, 21.6 (CSV, multi-sheet Excel, Parquet via DuckDB-Wasm virtual grid)
-- [ ] **Instant Profiling & Micro-Stats:** 4.1, 21.7 (Row/col counts, dtypes, null %, sparkline distributions on header hover)
-- [ ] **Conversational Data Analyst (DuckDB Code Execution):** 5.1, 5.2, 23.1, 23.2, 23.3 (Natural language to verified SQL/Python execution with plain-English summary)
-- [ ] **Minimal Single-Page Studio Interface:** Drag-and-drop file upload → instant 1M+ row virtual grid → interactive chart & chat dock
+- [x] **Universal Preview Engine:** 1.7, 21.1, 21.2, 21.5, 21.6 (CSV, multi-sheet Excel, Parquet via DuckDB virtual grid)
+- [x] **Instant Profiling & Micro-Stats:** 4.1, 21.7 (Row/col counts, dtypes, null %, sparkline distributions on header hover)
+- [x] **Conversational Data Analyst (DuckDB Code Execution):** 5.1, 5.2, 23.1, 23.2, 23.3 (Natural language to verified SQL/Python execution with plain-English summary)
+- [x] **Independent Multi-Page Studio Architecture:** Dedicated `/upload`, `/datasets`, `/datasets/[id]`, `/query`, `/analyst`, `/versions` with reusable topbar, sidebar, context bar, and command palette.
 - [ ] **Field Testing Milestone:** Manually test across 10 real-world messy files (multi-sheet financial Excel workbooks, Kaggle CSVs, nested JSON, compressed Parquets).
 - [ ] **Decision Point:** Document findings and user feedback here before moving to Phase 1.
 

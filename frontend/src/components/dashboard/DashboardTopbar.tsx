@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -20,6 +20,7 @@ import {
   FileSpreadsheet,
   Database,
   Check,
+  Sparkles,
 } from "lucide-react";
 import { clearStoredAuth, getStoredUser } from "@/lib/api";
 
@@ -35,12 +36,17 @@ export function DashboardTopbar({
   onToggleContextBar,
 }: DashboardTopbarProps) {
   const router = useRouter();
+  const [mounted, setMounted] = useState(false);
+  const [storedUser, setStoredUser] = useState<ReturnType<typeof getStoredUser>>(null);
   const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false);
   const [newMenuOpen, setNewMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [activeProject, setActiveProject] = useState("Q3 Quantitative Finance");
 
-  const storedUser = getStoredUser();
+  useEffect(() => {
+    setMounted(true);
+    setStoredUser(getStoredUser());
+  }, []);
 
   const handleLogout = () => {
     clearStoredAuth();
@@ -83,9 +89,8 @@ export function DashboardTopbar({
                 Workspaces & Projects
               </div>
               {[
-                { name: "Q3 Quantitative Finance", org: "Citadel / Equities", count: "14 Datasets" },
-                { name: "Customer Churn Retention", org: "Growth / Analytics", count: "6 Datasets" },
-                { name: "Clinical Trial Screening", org: "Biochem / PubChem", count: "3 Datasets" },
+                { name: "Primary Analytics Studio", org: "Local Workspace", count: "DuckDB WASM Active" },
+                { name: "Exploratory Data Lab", org: "Local SQLite & Storage", count: "Ready" },
               ].map((p) => (
                 <button
                   key={p.name}
@@ -168,46 +173,38 @@ export function DashboardTopbar({
               className="absolute right-0 mt-1.5 w-52 rounded-xl bg-white border border-[#E8E4DF] shadow-xl p-1.5 z-50 animate-in fade-in zoom-in-95 duration-100"
               onMouseLeave={() => setNewMenuOpen(false)}
             >
-              <button
-                onClick={() => {
-                  alert("Upload file dialog triggered.");
-                  setNewMenuOpen(false);
-                }}
+              <Link
+                href="/upload"
+                onClick={() => setNewMenuOpen(false)}
                 className="w-full text-left px-2.5 py-2 rounded-lg text-xs hover:bg-[#F7F5F2] text-[#1E1915] flex items-center gap-2 font-medium"
               >
                 <Upload className="w-3.5 h-3.5 text-[#0061FE]" />
                 <span>Upload Dataset (.xlsx, .parquet)</span>
-              </button>
-              <button
-                onClick={() => {
-                  alert("New SQL Query tab opened.");
-                  setNewMenuOpen(false);
-                }}
+              </Link>
+              <Link
+                href="/query"
+                onClick={() => setNewMenuOpen(false)}
                 className="w-full text-left px-2.5 py-2 rounded-lg text-xs hover:bg-[#F7F5F2] text-[#1E1915] flex items-center gap-2 font-medium"
               >
                 <Code2 className="w-3.5 h-3.5 text-amber-600" />
                 <span>New SQL Query</span>
-              </button>
-              <button
-                onClick={() => {
-                  alert("New Notebook opened.");
-                  setNewMenuOpen(false);
-                }}
+              </Link>
+              <Link
+                href="/analyst"
+                onClick={() => setNewMenuOpen(false)}
                 className="w-full text-left px-2.5 py-2 rounded-lg text-xs hover:bg-[#F7F5F2] text-[#1E1915] flex items-center gap-2 font-medium"
               >
-                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
-                <span>New Exploratory Notebook</span>
-              </button>
-              <button
-                onClick={() => {
-                  alert("Connect S3 / Cloud Bucket dialog.");
-                  setNewMenuOpen(false);
-                }}
+                <Sparkles className="w-3.5 h-3.5 text-[#0061FE]" />
+                <span>Ask AI Analyst</span>
+              </Link>
+              <Link
+                href="/datasets"
+                onClick={() => setNewMenuOpen(false)}
                 className="w-full text-left px-2.5 py-2 rounded-lg text-xs hover:bg-[#F7F5F2] text-[#1E1915] flex items-center gap-2 font-medium"
               >
-                <Database className="w-3.5 h-3.5 text-purple-600" />
-                <span>Connect Cloud S3 / MinIO</span>
-              </button>
+                <Database className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Browse All Datasets</span>
+              </Link>
             </div>
           )}
         </div>
@@ -241,8 +238,11 @@ export function DashboardTopbar({
             onClick={() => setUserMenuOpen(!userMenuOpen)}
             className="flex items-center gap-2 p-0.5 rounded-full hover:ring-2 hover:ring-[#0061FE]/30 transition-all"
           >
-            <div className="w-7 h-7 rounded-full bg-[#1E1915] text-white text-xs font-semibold flex items-center justify-center font-mono">
-              {storedUser?.full_name ? storedUser.full_name.charAt(0).toUpperCase() : "A"}
+            <div
+              suppressHydrationWarning
+              className="w-7 h-7 rounded-full bg-[#1E1915] text-white text-xs font-semibold flex items-center justify-center font-mono"
+            >
+              {mounted && storedUser?.full_name ? storedUser.full_name.charAt(0).toUpperCase() : "A"}
             </div>
           </button>
 
@@ -253,13 +253,13 @@ export function DashboardTopbar({
             >
               <div className="px-2.5 py-2 border-b border-[#E8E4DF] mb-1">
                 <div className="text-xs font-bold text-[#1E1915]">
-                  {storedUser?.full_name || "Ada Lovelace"}
+                  {mounted && storedUser?.full_name ? storedUser.full_name : "Ada Lovelace"}
                 </div>
                 <div className="text-[11px] text-[#736B63] truncate">
-                  {storedUser?.email || "ada@strata.ai"}
+                  {mounted && storedUser?.email ? storedUser.email : "ada@strata.ai"}
                 </div>
                 <div className="inline-block px-1.5 py-0.5 rounded bg-[#0061FE]/10 text-[#0061FE] text-[9px] font-mono font-bold uppercase mt-1">
-                  {storedUser?.role || "Data Scientist"}
+                  {mounted && storedUser?.role ? storedUser.role : "Data Scientist"}
                 </div>
               </div>
 

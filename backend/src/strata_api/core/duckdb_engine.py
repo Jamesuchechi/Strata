@@ -36,15 +36,25 @@ class DuckDBEngine:
         return relation.arrow()
 
     def register_file(self, view_name: str, file_path: str) -> None:
-        """Register a parquet, csv, or json file as a queryable view."""
-        if file_path.endswith((".parquet", ".pq")):
-            self.conn.execute(f"CREATE OR REPLACE VIEW {view_name} AS SELECT * FROM read_parquet('{file_path}');")
-        elif file_path.endswith((".csv", ".tsv")):
-            self.conn.execute(f"CREATE OR REPLACE VIEW {view_name} AS SELECT * FROM read_csv_auto('{file_path}');")
-        elif file_path.endswith((".json", ".jsonl")):
-            self.conn.execute(f"CREATE OR REPLACE VIEW {view_name} AS SELECT * FROM read_json_auto('{file_path}');")
+        """Register a parquet, csv, json, or excel file as a queryable view."""
+        import os
+        abs_path = os.path.abspath(file_path)
+        if abs_path.endswith((".parquet", ".pq")):
+            self.conn.execute(f"CREATE OR REPLACE VIEW {view_name} AS SELECT * FROM read_parquet('{abs_path}');")
+        elif abs_path.endswith((".csv", ".tsv")):
+            self.conn.execute(f"CREATE OR REPLACE VIEW {view_name} AS SELECT * FROM read_csv_auto('{abs_path}');")
+        elif abs_path.endswith((".json", ".jsonl")):
+            self.conn.execute(f"CREATE OR REPLACE VIEW {view_name} AS SELECT * FROM read_json_auto('{abs_path}');")
+        elif abs_path.endswith((".xlsx", ".xls")):
+            import pandas as pd
+            df = pd.read_excel(abs_path)
+            self.conn.register(view_name, df)
         else:
             raise ValueError(f"Unsupported file format for DuckDB registration: {file_path}")
+
+    def register_df(self, view_name: str, df: Any) -> None:
+        """Register a pandas or polars DataFrame directly."""
+        self.conn.register(view_name, df)
 
     def close(self) -> None:
         """Close connection."""

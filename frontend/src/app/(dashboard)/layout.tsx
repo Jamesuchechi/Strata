@@ -1,21 +1,18 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { DashboardTopbar } from "@/components/dashboard/DashboardTopbar";
 import { DashboardSidebar } from "@/components/dashboard/DashboardSidebar";
 import { DashboardContextBar } from "@/components/dashboard/DashboardContextBar";
 import { CommandPalette } from "@/components/dashboard/CommandPalette";
+import { StudioProvider, useStudio } from "@/context/StudioContext";
 
-export default function DashboardLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+function DashboardShell({ children }: { children: React.ReactNode }) {
+  const router = useRouter();
+  const { isContextBarOpen, toggleContextBar } = useStudio();
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-  const [isContextBarOpen, setIsContextBarOpen] = useState(true);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
-  const [activeNav, setActiveNav] = useState("datasets");
-  const [activeDatasetId, setActiveDatasetId] = useState("orders_q3");
 
   // Global Keyboard Shortcuts
   useEffect(() => {
@@ -33,45 +30,38 @@ export default function DashboardLayout({
       // Cmd/Ctrl + I => Toggle Context Inspector
       else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "i") {
         e.preventDefault();
-        setIsContextBarOpen((prev) => !prev);
+        toggleContextBar();
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, []);
+  }, [toggleContextBar]);
 
   return (
-    <div className="min-h-screen bg-[#F7F5F2] text-[#1E1915] flex flex-col font-sans selection:bg-[#0061FE] selection:text-white antialiased">
+    <div className="h-screen w-screen overflow-hidden bg-[#F7F5F2] text-[#1E1915] flex flex-col font-sans selection:bg-[#0061FE] selection:text-white antialiased">
       {/* Global Topbar */}
       <DashboardTopbar
         onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
         isContextBarOpen={isContextBarOpen}
-        onToggleContextBar={() => setIsContextBarOpen((prev) => !prev)}
+        onToggleContextBar={toggleContextBar}
       />
 
       {/* Main 3-Pane Body */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* Reusable Left Navigation Sidebar */}
+      <div className="flex-1 min-h-0 flex overflow-hidden">
+        {/* Reusable Left Navigation Sidebar - fixed in place */}
         <DashboardSidebar
           isCollapsed={isSidebarCollapsed}
           onToggleCollapse={() => setIsSidebarCollapsed((prev) => !prev)}
-          activeNav={activeNav}
-          onSelectNav={(id) => setActiveNav(id)}
-          activeDatasetId={activeDatasetId}
-          onSelectDataset={(id) => setActiveDatasetId(id)}
         />
 
-        {/* Center Workspace Canvas */}
-        <main className="flex-1 min-w-0 overflow-y-auto bg-[#F7F5F2] flex flex-col">
+        {/* Center Workspace Canvas - only this section scrolls */}
+        <main className="flex-1 min-w-0 min-h-0 overflow-y-auto bg-[#F7F5F2] flex flex-col">
           {children}
         </main>
 
-        {/* Contextual Right Inspector Drawer */}
-        <DashboardContextBar
-          isOpen={isContextBarOpen}
-          onClose={() => setIsContextBarOpen(false)}
-        />
+        {/* Contextual Right Inspector Drawer - fixed in place */}
+        <DashboardContextBar />
       </div>
 
       {/* Global Command Palette */}
@@ -80,16 +70,28 @@ export default function DashboardLayout({
         onClose={() => setIsCommandPaletteOpen(false)}
         onSelectAction={(actionId) => {
           if (actionId.startsWith("dataset-")) {
-            setActiveNav("datasets");
+            router.push("/datasets");
           } else if (actionId === "action-query" || actionId.startsWith("query-")) {
-            setActiveNav("query");
+            router.push("/query");
           } else if (actionId === "version-commit") {
-            setActiveNav("versions");
+            router.push("/versions");
           } else if (actionId === "action-analyst") {
-            setActiveNav("analyst");
+            router.push("/analyst");
           }
         }}
       />
     </div>
+  );
+}
+
+export default function DashboardLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <StudioProvider>
+      <DashboardShell>{children}</DashboardShell>
+    </StudioProvider>
   );
 }
