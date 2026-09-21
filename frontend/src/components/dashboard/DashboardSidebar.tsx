@@ -22,6 +22,7 @@ import {
   Upload,
   Layers,
   LayoutDashboard,
+  BarChart3,
 } from "lucide-react";
 import { fetchDatasets } from "@/lib/api";
 import { DatasetItem } from "@/lib/types";
@@ -84,6 +85,20 @@ export function DashboardSidebar({
       label: "Datasets & Tables",
       icon: <Database className="w-4 h-4 text-emerald-600" />,
       matches: (path: string) => path.startsWith("/datasets"),
+    },
+    {
+      id: "visualizer",
+      href: "/visualizer",
+      label: "Visual Chart Studio",
+      icon: <BarChart3 className="w-4 h-4 text-[#0061FE]" />,
+      matches: (path: string) => path.startsWith("/visualizer"),
+    },
+    {
+      id: "dashboards",
+      href: "/dashboards",
+      label: "Dashboards & Stories",
+      icon: <LayoutDashboard className="w-4 h-4 text-purple-600" />,
+      matches: (path: string) => path.startsWith("/dashboards"),
     },
     {
       id: "query",

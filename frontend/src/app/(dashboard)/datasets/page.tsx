@@ -248,12 +248,14 @@ export default function DatasetsPage() {
           <div className="w-14 h-14 mx-auto rounded-2xl bg-[#FAF8F5] border border-[#E8E4DF] flex items-center justify-center text-[#8C827A]">
             <Database className="w-7 h-7" />
           </div>
-          <div>
-            <h3 className="text-base font-bold text-[#1E1915]">No datasets found</h3>
+            <h3 className="text-base font-bold text-[#1E1915]">
+              {datasets.length === 0 ? "No datasets uploaded yet" : "No matching datasets"}
+            </h3>
             <p className="text-xs text-[#8C827A] mt-1">
-              {searchQuery ? "Try refining your search keywords" : "Upload your first file to get started."}
+              {datasets.length === 0
+                ? "Your analytical lakehouse is currently empty. Upload your first CSV, Excel, Parquet, or GeoJSON file to begin exploring."
+                : "Try refining your search keywords or format filters."}
             </p>
-          </div>
           <Link
             href="/upload"
             className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#0061FE] text-white text-xs font-semibold hover:bg-[#0052D4] shadow-sm transition-all"

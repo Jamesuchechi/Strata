@@ -10,6 +10,8 @@ from strata_api.routers import (
     datasets_router,
     diff_router,
     auth_router,
+    eda_router,
+    automl_router,
 )
 
 
@@ -48,6 +50,16 @@ def create_app() -> FastAPI:
     app.include_router(datasets_router, prefix=settings.API_V1_PREFIX)
     app.include_router(diff_router, prefix=settings.API_V1_PREFIX)
     app.include_router(auth_router, prefix=settings.API_V1_PREFIX)
+    app.include_router(eda_router, prefix=settings.API_V1_PREFIX)
+    app.include_router(automl_router, prefix=settings.API_V1_PREFIX)
+
+    from strata_api.routers.datasets import get_shared_dataset
+    app.add_api_route(
+        f"{settings.API_V1_PREFIX}/shared/{{token}}",
+        get_shared_dataset,
+        methods=["GET"],
+        tags=["Datasets"],
+    )
 
     @app.get("/")
     async def root():

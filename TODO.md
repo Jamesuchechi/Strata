@@ -24,26 +24,26 @@ Every feature in the master blueprint belongs to exactly one phase below. New fe
 
 ## Phase 1 — MVP: The Core Studio & Versioning Backbone
 
-- [ ] **Ingestion:** 1.1, 1.2, 1.3, 1.8, 1.12 (Web upload, CLI upload, SDK upload, duplicate detection)
-- [ ] **Immutable Versioning:** 2.1, 2.2, 2.3, 2.7, 2.8, 2.9, 2.12 (Content-addressed blobs, commit messages, visual history DAG, rollback)
-- [ ] **Multi-Dimensional Diffing:** 3.1, 3.2, 3.3, 3.4, 3.8 (Row/col deltas, schema diffs, primary-key cell diffs, visual side-by-side UI)
-- [ ] **Visual Chart Studio:** 22.1, 22.2 (Drag-and-drop shelf builder: scatter, line, bar, histogram, boxplot)
-- [ ] **Data Wrangling Recipes:** 5.3, 7.3 (Point-and-click recipes: fill nulls, trim, split, dedupe with Python code export)
-- [ ] **Quality & Profiling:** 4.2, 4.3, 4.4, 4.5, 4.8, 4.9, 4.15 (Numeric/categorical stats, missing patterns, PII detection, composite quality score)
-- [ ] **AI Layer:** 5.5, 5.14, 5.15 (Semantic types, confidence scoring, explainable audit trail)
-- [ ] **Python SDK & CLI (`strata`):** 8.1, 8.2, 8.3, 8.4, 8.5, 8.6, 8.7, 8.13 (`strata upload`, `strata diff`, `strata.Dataset`)
-- [ ] **Sharing:** 11.1 (Shareable read-only preview links)
+- [x] **Ingestion:** 1.1, 1.2, 1.3, 1.8, 1.12 (Web upload, CLI upload, SDK upload, duplicate detection)
+- [x] **Immutable Versioning:** 2.1, 2.2, 2.3, 2.7, 2.8, 2.9, 2.12 (Content-addressed blobs, commit messages, visual history DAG, rollback)
+- [x] **Multi-Dimensional Diffing:** 3.1, 3.2, 3.3, 3.4, 3.8 (Row/col deltas, schema diffs, primary-key cell diffs, visual side-by-side UI)
+- [x] **Visual Chart Studio:** 22.1, 22.2 (Drag-and-drop shelf builder: 16 chart types with AI/Data Science explanation dock & Python code export)
+- [x] **Data Wrangling Recipes:** 5.3, 7.3 (Point-and-click recipes: fill nulls, trim, split, dedupe with auto-version commit & Polars code export)
+- [x] **Quality & Profiling:** 4.2, 4.3, 4.4, 4.5, 4.8, 4.9, 4.15 (Numeric/categorical stats, missing patterns, PII detection, composite quality score)
+- [x] **AI Layer:** 5.5, 5.14, 5.15 (Semantic types, confidence scoring, explainable audit trail)
+- [x] **Python SDK & CLI (`strata`):** 8.1, 8.2, 8.3, 8.4, 8.5, 8.6, 8.7, 8.13 (`strata upload`, `strata diff`, `strata query`, `strata.Dataset`)
+- [x] **Sharing:** 11.1 (Shareable read-only preview links at `/shared/[token]`)
 
 ---
 
 ## Phase 2 — Usable Studio: Deep EDA, Specialized Formats & Baseline AutoML
 
-- [ ] **Specialized Formats & Converters:** 1.4, 1.9, 1.14, 1.15, 21.3, 21.4, 21.8 (PubChem `.sdf`/`.mol` chemical structures, GeoJSON map preview, multi-format conversion)
-- [ ] **Deep EDA Dossier:** 22.3, 22.4, 22.5, 22.6, 22.7 (Correlation matrix, missingness matrix, pairplot generator, high-res export)
-- [ ] **Conversational Analyst Advanced:** 23.4, 23.5, 23.6 (Automated hypothesis testing: t-test/ANOVA/Chi-Square, anomaly root-cause detective)
-- [ ] **AutoML Sandbox:** 24.1, 24.2, 24.3, 24.4, 24.5, 24.6, 24.7 (Baseline LightGBM/Random Forest, SHAP explainability, ROC/confusion matrices, leakage detection)
-- [ ] **Interactive Dashboards:** 25.1, 25.2, 25.3, 25.4 (Flexible widget canvas, global parameter filters, executive summary generator)
-- [ ] **Lineage DAG:** 6.1, 6.3, 6.4 (Parent/child tracking, backward provenance, forward impact analysis)
+- [x] **Specialized Formats & Converters:** 1.4, 1.9, 1.14, 1.15, 21.3, 21.4, 21.8 (PubChem `.sdf`/`.mol` chemical structures, GeoJSON map preview, multi-format conversion)
+- [x] **Deep EDA Dossier:** 22.3, 22.4, 22.5, 22.6, 22.7 (Correlation matrix, missingness matrix, pairplot generator, high-res export)
+- [x] **Conversational Analyst Advanced:** 23.4, 23.5, 23.6 (Automated hypothesis testing: t-test/ANOVA/Chi-Square, anomaly root-cause detective)
+- [x] **AutoML Sandbox:** 24.1, 24.2, 24.3, 24.4, 24.5, 24.6, 24.7 (Baseline LightGBM/Random Forest, SHAP explainability, ROC/confusion matrices, leakage detection)
+- [x] **Interactive Dashboards:** 25.1, 25.2, 25.3, 25.4 (Flexible widget canvas, global parameter filters, executive summary generator)
+- [x] **Lineage DAG:** 6.1, 6.3, 6.4 (Parent/child tracking, backward provenance, forward impact analysis)
 - [ ] **Versioning Enhancements:** 2.4, 2.10, 2.11, 2.14, 2.17 (Tags, semver, pinned versions, version permissions, custom metadata)
 - [ ] **Diffing Enhancements:** 3.5, 3.6, 3.7, 3.9, 3.12, 3.13 (Distribution diffs, rename detection, categorical domain shifts)
 - [ ] **Collaboration:** 9.1, 9.2, 9.3, 9.4, 9.5 (Workspaces, roles, invites, activity feed)

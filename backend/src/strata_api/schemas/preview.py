@@ -23,3 +23,7 @@ class PreviewResponse(BaseModel):
     column_stats: Optional[List[Dict[str, Any]]] = None
     pii_flags: Optional[Dict[str, str]] = None
     quality_score: Optional[Dict[str, Any]] = None
+    is_duplicate: Optional[bool] = False
+    existing_dataset_id: Optional[str] = None
+    existing_dataset_name: Optional[str] = None
+

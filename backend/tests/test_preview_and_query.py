@@ -6,34 +6,29 @@ from strata_api.main import app
 
 
 @pytest.mark.asyncio
-async def test_list_datasets_seeds_defaults():
-    """Test that listing datasets auto-seeds default datasets."""
+async def test_upload_preview_and_deduplication():
+    """Test uploading a dataset, verifying preview, and detecting duplicate uploads."""
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.get("/api/datasets")
-        assert response.status_code == 200
-        datasets = response.json()
-        assert len(datasets) >= 3
-        filenames = [d["filename"] for d in datasets]
-        assert "customer_churn.csv" in filenames
-        assert "financial_projections.xlsx" in filenames
-        assert "genomic_variants.parquet" in filenames
+        csv_content = b"id,name,val\n1,Alpha,10\n2,Beta,20\n"
+        files = {"file": ("test_dedup.csv", csv_content, "text/csv")}
 
+        # Initial upload
+        res1 = await client.post("/api/preview", files=files)
+        assert res1.status_code == 200
+        data1 = res1.json()
+        assert data1["filename"] == "test_dedup.csv"
+        assert data1["total_rows"] == 2
+        assert data1.get("is_duplicate") is False
 
-@pytest.mark.asyncio
-async def test_get_dataset_detail_and_preview():
-    """Test retrieving preview data and column stats for a seeded dataset."""
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.get("/api/datasets/churn_demo")
-        assert response.status_code == 200
-        data = response.json()
-        assert data["filename"] == "customer_churn.csv"
-        assert data["format"] == "csv"
-        assert len(data["preview_rows"]) > 0
-        assert len(data["schema_fields"]) > 0
-        assert data["view_name"] == "view_churn_demo"
-        assert data["column_stats"] is not None
+        # Duplicate upload of same content
+        files_duplicate = {"file": ("test_dedup_copy.csv", csv_content, "text/csv")}
+        res2 = await client.post("/api/preview", files=files_duplicate)
+        assert res2.status_code == 200
+        data2 = res2.json()
+        assert data2.get("is_duplicate") is True
+        assert data2.get("existing_dataset_id") is not None
+
 
 
 @pytest.mark.asyncio

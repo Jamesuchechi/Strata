@@ -221,6 +221,21 @@ export default function UploadPage() {
             )}
           </div>
 
+          {/* Deduplication Warning Banner */}
+          {previewResult.is_duplicate && (
+            <div className="p-3.5 rounded-xl bg-amber-50/80 border border-amber-200 text-amber-900 text-xs flex items-start gap-3">
+              <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <div className="font-bold">Cryptographic Deduplication Match Detected (Feature 1.12)</div>
+                <p className="text-[11px] text-amber-800 leading-relaxed">
+                  An identical content hash (<span className="font-mono">{previewResult.content_hash.slice(0, 12)}...</span>) already exists in your workspace as{" "}
+                  <strong>{previewResult.existing_dataset_name || previewResult.filename}</strong>.
+                  Strata linked this upload to the existing zero-copy storage blob to eliminate duplicate disk consumption.
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Quick Metrics */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div className="p-3 rounded-xl bg-[#FAF8F5] border border-[#E8E4DF]">

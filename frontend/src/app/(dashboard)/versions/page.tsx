@@ -19,9 +19,16 @@ import {
   RefreshCw,
   Check,
 } from "lucide-react";
-import { fetchCommits, createSnapshotCommit, fetchDatasets } from "@/lib/api";
+import {
+  fetchCommits,
+  createSnapshotCommit,
+  fetchDatasets,
+  rollbackToCommit,
+  compareCommits,
+} from "@/lib/api";
 import { useStudio } from "@/context/StudioContext";
 import { DatasetItem } from "@/lib/types";
+import { LineageDAG } from "@/components/studio/LineageDAG";
 
 interface CommitRecord {
   id: string;
@@ -54,6 +61,14 @@ export default function VersionsPage() {
   const [newCommitMessage, setNewCommitMessage] = useState("");
   const [newCommitDataset, setNewCommitDataset] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isRollingBack, setIsRollingBack] = useState(false);
+
+  // Multi-Version Diff Studio State
+  const [viewMode, setViewMode] = useState<"detail" | "compare" | "lineage">("detail");
+  const [compareBaseId, setCompareBaseId] = useState<string>("");
+  const [compareTargetId, setCompareTargetId] = useState<string>("");
+  const [compareResult, setCompareResult] = useState<any>(null);
+  const [isComparing, setIsComparing] = useState(false);
 
   const loadCommits = async () => {
     setIsLoading(true);
@@ -70,6 +85,10 @@ export default function VersionsPage() {
       if (commitList.length > 0) {
         setSelectedCommitId(commitList[0].id);
         setActiveCommit(commitList[0]);
+      }
+      if (commitList.length >= 2) {
+        setCompareBaseId(commitList[commitList.length - 1].id);
+        setCompareTargetId(commitList[0].id);
       }
     } catch (err) {
       console.error("Failed to load commits:", err);
@@ -91,6 +110,47 @@ export default function VersionsPage() {
   const handleSelectCommit = (c: CommitRecord) => {
     setSelectedCommitId(c.id);
     setActiveCommit(c);
+  };
+
+  const handleRollback = async (commitId: string) => {
+    const target = commits.find((c) => c.id === commitId);
+    if (!target) return;
+    if (
+      !confirm(
+        `Are you sure you want to rollback to snapshot ${target.version}? A new rollback commit will be recorded in the immutable DAG.`
+      )
+    )
+      return;
+
+    setIsRollingBack(true);
+    try {
+      const res = await rollbackToCommit(commitId);
+      if (res.commit) {
+        setCommits((prev) => [res.commit, ...prev]);
+        setSelectedCommitId(res.commit.id);
+        setActiveCommit(res.commit);
+      }
+    } catch (err: any) {
+      alert(`Rollback failed: ${err.message}`);
+    } finally {
+      setIsRollingBack(false);
+    }
+  };
+
+  const handleRunCompare = async (baseId?: string, targetId?: string) => {
+    const bId = baseId || compareBaseId;
+    const tId = targetId || compareTargetId;
+    if (!bId || !tId) return;
+
+    setIsComparing(true);
+    try {
+      const res = await compareCommits(bId, tId);
+      setCompareResult(res);
+    } catch (err: any) {
+      alert(`Comparison failed: ${err.message}`);
+    } finally {
+      setIsComparing(false);
+    }
   };
 
   const handleCreateSnapshot = async (e: React.FormEvent) => {
@@ -135,8 +195,46 @@ export default function VersionsPage() {
           </div>
         </div>
 
-        {/* Branch Switcher & Commit Button */}
-        <div className="flex items-center gap-2">
+        {/* Mode Switcher, Branch Switcher & Commit Button */}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center bg-[#FAF8F5] border border-[#E8E4DF] p-1 rounded-xl text-xs font-semibold">
+            <button
+              onClick={() => setViewMode("detail")}
+              className={`px-3 py-1 rounded-lg transition-all ${
+                viewMode === "detail"
+                  ? "bg-white text-[#0061FE] font-bold shadow-2xs"
+                  : "text-[#736B63] hover:text-[#1E1915]"
+              }`}
+            >
+              Snapshot Detail
+            </button>
+            <button
+              onClick={() => {
+                setViewMode("compare");
+                if (commits.length >= 2) {
+                  handleRunCompare(commits[commits.length - 1].id, commits[0].id);
+                }
+              }}
+              className={`px-3 py-1 rounded-lg transition-all ${
+                viewMode === "compare"
+                  ? "bg-white text-[#0061FE] font-bold shadow-2xs"
+                  : "text-[#736B63] hover:text-[#1E1915]"
+              }`}
+            >
+              Multi-Version Diff Studio
+            </button>
+            <button
+              onClick={() => setViewMode("lineage")}
+              className={`px-3 py-1 rounded-lg transition-all ${
+                viewMode === "lineage"
+                  ? "bg-white text-[#0061FE] font-bold shadow-2xs"
+                  : "text-[#736B63] hover:text-[#1E1915]"
+              }`}
+            >
+              Lineage DAG
+            </button>
+          </div>
+
           <button
             onClick={loadCommits}
             className="p-2 rounded-xl border border-[#E8E4DF] bg-white hover:bg-[#FAF8F5] text-[#736B63] hover:text-[#1E1915] transition-colors"
@@ -144,19 +242,6 @@ export default function VersionsPage() {
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? "animate-spin" : ""}`} />
           </button>
-
-          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#E8E4DF] bg-[#FAF8F5] text-xs font-semibold text-[#1E1915]">
-            <GitBranch className="w-3.5 h-3.5 text-[#0061FE]" />
-            <select
-              value={selectedBranch}
-              onChange={(e) => setSelectedBranch(e.target.value)}
-              className="bg-transparent outline-none cursor-pointer"
-            >
-              <option value="main">main</option>
-              <option value="feature/clean-data">feature/clean-data</option>
-              <option value="experiment/null-impute">experiment/null-impute</option>
-            </select>
-          </div>
 
           <button
             onClick={() => setShowCreateModal(true)}
@@ -168,8 +253,11 @@ export default function VersionsPage() {
         </div>
       </div>
 
-      {/* Main Diff Studio */}
-      <div className="flex-1 flex overflow-hidden">
+      {viewMode === "lineage" ? (
+        <LineageDAG />
+      ) : (
+        /* Main Diff Studio */
+        <div className="flex-1 flex overflow-hidden">
         {/* Left Column: Commit Timeline */}
         <aside className="w-80 border-r border-[#E8E4DF] bg-[#FAF8F5] overflow-y-auto p-4 space-y-3 shrink-0">
           <div className="text-[10px] font-mono uppercase text-[#8C827A] font-bold px-1 flex items-center justify-between">
@@ -227,7 +315,140 @@ export default function VersionsPage() {
 
         {/* Center & Right Column: Diff Inspector */}
         <main className="flex-1 overflow-y-auto p-6 space-y-6">
-          {activeCommit ? (
+          {viewMode === "compare" ? (
+            /* Multi-Version Diff Comparator */
+            <div className="space-y-6 max-w-4xl">
+              {/* Comparator Selector Card */}
+              <div className="p-5 rounded-2xl bg-white border border-[#E8E4DF] shadow-2xs space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-base font-bold text-[#1E1915]">
+                    Arbitrary Multi-Version Diff Comparator (Pillar 3)
+                  </h3>
+                  <span className="text-xs text-[#8C827A] font-mono">
+                    DAG State Comparison
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-[#5C554D]">
+                      Base Snapshot ($V_A$)
+                    </label>
+                    <select
+                      value={compareBaseId}
+                      onChange={(e) => {
+                        setCompareBaseId(e.target.value);
+                        handleRunCompare(e.target.value, compareTargetId);
+                      }}
+                      className="w-full p-2 rounded-xl border border-[#E8E4DF] bg-[#FAF8F5] text-xs font-mono font-semibold text-[#1E1915] outline-none"
+                    >
+                      {commits.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.version} ({c.hash}) — {c.message.slice(0, 30)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-[#5C554D]">
+                      Target Snapshot ($V_B$)
+                    </label>
+                    <select
+                      value={compareTargetId}
+                      onChange={(e) => {
+                        setCompareTargetId(e.target.value);
+                        handleRunCompare(compareBaseId, e.target.value);
+                      }}
+                      className="w-full p-2 rounded-xl border border-[#E8E4DF] bg-[#FAF8F5] text-xs font-mono font-semibold text-[#1E1915] outline-none"
+                    >
+                      {commits.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.version} ({c.hash}) — {c.message.slice(0, 30)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => handleRunCompare()}
+                  disabled={isComparing || !compareBaseId || !compareTargetId}
+                  className="px-4 py-2 rounded-xl bg-[#0061FE] hover:bg-[#0052D4] text-white text-xs font-semibold flex items-center gap-2 shadow-sm transition-all"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isComparing ? "animate-spin" : ""}`} />
+                  <span>{isComparing ? "Computing Diff..." : "Recompute Multi-Dimensional Diff"}</span>
+                </button>
+              </div>
+
+              {/* Comparison Results */}
+              {compareResult && (
+                <div className="space-y-4 animate-in fade-in duration-200">
+                  {/* Delta KPI Grid */}
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="p-4 rounded-2xl bg-white border border-[#E8E4DF] shadow-2xs">
+                      <div className="text-xs text-[#8C827A] mb-1">Added Columns</div>
+                      <div className="text-2xl font-bold text-emerald-600 font-mono">
+                        +{compareResult.column_delta?.added?.length || 0}
+                      </div>
+                    </div>
+                    <div className="p-4 rounded-2xl bg-white border border-[#E8E4DF] shadow-2xs">
+                      <div className="text-xs text-[#8C827A] mb-1">Removed Columns</div>
+                      <div className="text-2xl font-bold text-rose-600 font-mono">
+                        -{compareResult.column_delta?.removed?.length || 0}
+                      </div>
+                    </div>
+                    <div className="p-4 rounded-2xl bg-white border border-[#E8E4DF] shadow-2xs">
+                      <div className="text-xs text-[#8C827A] mb-1">Structural Equality</div>
+                      <div className={`text-base font-bold font-mono mt-1 ${compareResult.schema_diff?.identical_schema ? "text-emerald-700" : "text-amber-700"}`}>
+                        {compareResult.schema_diff?.identical_schema ? "Identical Schemas" : "Mutated Schema"}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Added Columns Section */}
+                  {compareResult.column_delta?.added?.length > 0 && (
+                    <div className="p-4 rounded-2xl bg-white border border-[#E8E4DF] shadow-2xs space-y-2">
+                      <div className="text-xs font-bold text-emerald-700 flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                        <span>Columns Added in Target ({compareResult.column_delta.added.length})</span>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {compareResult.column_delta.added.map((col: string) => (
+                          <span
+                            key={col}
+                            className="px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-mono font-semibold"
+                          >
+                            +{col}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Removed Columns Section */}
+                  {compareResult.column_delta?.removed?.length > 0 && (
+                    <div className="p-4 rounded-2xl bg-white border border-[#E8E4DF] shadow-2xs space-y-2">
+                      <div className="text-xs font-bold text-rose-700 flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-rose-500" />
+                        <span>Columns Removed in Target ({compareResult.column_delta.removed.length})</span>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {compareResult.column_delta.removed.map((col: string) => (
+                          <span
+                            key={col}
+                            className="px-2.5 py-1 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-xs font-mono font-semibold"
+                          >
+                            -{col}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          ) : activeCommit ? (
             <>
               {/* Active Commit Overview */}
               <div className="p-5 rounded-2xl bg-white border border-[#E8E4DF] shadow-2xs space-y-4">
@@ -251,11 +472,12 @@ export default function VersionsPage() {
                   </div>
 
                   <button
-                    onClick={() => alert(`Checked out snapshot ${activeCommit.version} (${activeCommit.hash}). Zero-copy view restored.`)}
-                    className="px-3 py-1.5 rounded-xl border border-[#E8E4DF] hover:bg-[#FAF8F5] text-xs font-semibold text-[#1E1915] flex items-center gap-1.5 transition-colors self-start sm:self-auto cursor-pointer"
+                    onClick={() => handleRollback(activeCommit.id)}
+                    disabled={isRollingBack}
+                    className="px-3.5 py-1.5 rounded-xl border border-[#E8E4DF] hover:bg-rose-50 hover:border-rose-300 hover:text-rose-700 text-xs font-semibold text-[#1E1915] flex items-center gap-1.5 transition-colors self-start sm:self-auto cursor-pointer"
                   >
-                    <RotateCcw className="w-3.5 h-3.5 text-[#0061FE]" />
-                    <span>Checkout This Version</span>
+                    <RotateCcw className={`w-3.5 h-3.5 text-[#0061FE] ${isRollingBack ? "animate-spin" : ""}`} />
+                    <span>{isRollingBack ? "Rolling back..." : "Rollback to This Snapshot"}</span>
                   </button>
                 </div>
 
@@ -320,6 +542,7 @@ export default function VersionsPage() {
           )}
         </main>
       </div>
+      )}
 
       {/* Create Snapshot Modal */}
       {showCreateModal && (

@@ -27,6 +27,31 @@ async def preview_uploaded_file(
     # Compute content hash
     content_hash = compute_content_hash(file.file)
 
+    from strata_api.routers.datasets import _datasets_db
+
+    # Check for existing duplicate content hash
+    for existing_id, existing_record in _datasets_db.items():
+        if existing_record.get("content_hash") == content_hash:
+            schema_fields = [ColumnSchema(**f) for f in existing_record.get("schema_fields", [])]
+            return PreviewResponse(
+                filename=existing_record["filename"],
+                format=existing_record["format"],
+                content_hash=content_hash,
+                total_rows=existing_record["total_rows"],
+                total_columns=existing_record["total_columns"],
+                schema_fields=schema_fields,
+                preview_rows=existing_record.get("preview_rows", []),
+                sheets=existing_record.get("sheets"),
+                active_sheet=existing_record.get("active_sheet"),
+                view_name=existing_record.get("view_name"),
+                column_stats=existing_record.get("column_stats"),
+                pii_flags=existing_record.get("pii_flags"),
+                quality_score=existing_record.get("full_quality"),
+                is_duplicate=True,
+                existing_dataset_id=existing_id,
+                existing_dataset_name=existing_record["name"],
+            )
+
     storage_dir = get_storage_dir()
     stored_path = os.path.join(storage_dir, f"{content_hash[:12]}_{filename}")
 

@@ -1,0 +1,26 @@
+customer_id,customer_name,email,country,tenure_months,monthly_charges,total_spend,churn_probability,churned
+CUST-1000,Alice Johnson,user_0@company.com,United States,12,65.5,786.0,0.12,No
+CUST-1001,Bob Smith,user_1@company.com,Germany,3,89.2,267.6,0.78,Yes
+CUST-1002,Charlie Davis,user_2@company.com,United Kingdom,45,45.0,2025.0,0.05,No
+CUST-1003,Diana Prince,user_3@company.com,Canada,8,110.4,883.2,0.65,Yes
+CUST-1004,Evan Wright,user_4@company.com,France,60,75.8,4548.0,0.08,No
+CUST-1005,Fiona Gallagher,user_5@company.com,Japan,24,55.2,1324.8,0.22,No
+CUST-1006,George Clark,user_6@company.com,Australia,18,95.0,1710.0,0.45,No
+CUST-1007,Hannah Abbott,user_7@company.com,Brazil,5,70.3,351.5,0.81,Yes
+CUST-1008,Ian Malcolm,user_8@company.com,Netherlands,36,85.5,3078.0,0.15,No
+CUST-1009,Julia Roberts,user_9@company.com,United States,48,62.0,2976.0,0.1,No
+CUST-1010,Kevin Bacon,user_10@company.com,Sweden,15,78.4,1176.0,0.38,No
+CUST-1011,Laura Croft,user_11@company.com,Canada,2,105.0,210.0,0.89,Yes
+CUST-1012,Michael Scott,user_12@company.com,United States,54,50.5,2727.0,0.07,No
+CUST-1013,Nora Jones,user_13@company.com,Germany,30,82.1,2463.0,0.29,No
+CUST-1014,Oscar Martinez,user_14@company.com,United States,42,91.0,3822.0,0.19,No
+CUST-1015,Pam Beesly,user_15@company.com,United States,65,64.2,4173.0,0.04,No
+CUST-1016,Quentin Tarantino,user_16@company.com,United Kingdom,9,99.9,899.1,0.71,Yes
+CUST-1017,Rachel Green,user_17@company.com,United States,21,74.5,1564.5,0.33,No
+CUST-1018,Steve Rogers,user_18@company.com,United States,72,115.0,8280.0,0.02,No
+CUST-1019,Tony Stark,user_19@company.com,United States,80,120.0,9600.0,0.01,No
+CUST-1020,Uma Thurman,user_20@company.com,France,14,88.0,1232.0,0.42,No
+CUST-1021,Victor Stone,user_21@company.com,United States,11,68.5,753.5,0.58,Yes
+CUST-1022,Wanda Maximoff,user_22@company.com,Sokovia,28,102.5,2870.0,0.61,Yes
+CUST-1023,Xavier Charles,user_23@company.com,United States,90,49.0,4410.0,0.03,No
+CUST-1024,Yvonne Strahovski,user_24@company.com,Australia,33,84.0,2772.0,0.25,No

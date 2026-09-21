@@ -44,6 +44,9 @@ export interface PreviewData {
   column_stats?: ColumnStat[];
   pii_flags?: Record<string, string>;
   quality_score?: QualityScore;
+  is_duplicate?: boolean;
+  existing_dataset_id?: string;
+  existing_dataset_name?: string;
 }
 
 export interface DatasetItem {
@@ -73,3 +76,31 @@ export interface QueryResult {
   explanation?: string;
   error?: string;
 }
+
+export interface TransformOperation {
+  op: "drop_nulls" | "fill_null" | "trim_whitespace" | "drop_duplicates" | "cast_type" | "filter_rows";
+  column?: string;
+  columns?: string[];
+  strategy?: "mean" | "median" | "mode" | "zero" | "forward" | "custom";
+  value?: any;
+  target_type?: "Int64" | "Float64" | "String" | "Boolean";
+  operator?: ">" | "<" | "==" | "!=" | ">=" | "<=";
+}
+
+export interface TransformResult {
+  success: boolean;
+  new_version_tag: string;
+  new_content_hash: string;
+  row_delta: number;
+  column_delta: number;
+  generated_python_code: string;
+  preview: PreviewData;
+}
+
+export interface ShareResult {
+  share_token: string;
+  share_url: string;
+  created_at: string;
+  dataset_name: string;
+}
+

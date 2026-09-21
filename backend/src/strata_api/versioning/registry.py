@@ -66,3 +66,11 @@ def get_commit_by_id(commit_id: str) -> Optional[Dict[str, Any]]:
         if c["id"] == commit_id or c["hash"] == commit_id:
             return c
     return None
+
+
+def clear_commits():
+    """Clear all commits and reset DAG."""
+    global _commits, _graph
+    _commits.clear()
+    _graph = VersionGraph()
+

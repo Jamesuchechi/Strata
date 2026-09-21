@@ -6,6 +6,8 @@ from strata_api.routers.query import router as query_router
 from strata_api.routers.datasets import router as datasets_router
 from strata_api.routers.diff import router as diff_router
 from strata_api.routers.auth import auth_router
+from strata_api.routers.eda import router as eda_router
+from strata_api.routers.automl import router as automl_router
 
 __all__ = [
     "health_router",
@@ -14,4 +16,6 @@ __all__ = [
     "datasets_router",
     "diff_router",
     "auth_router",
+    "eda_router",
+    "automl_router",
 ]

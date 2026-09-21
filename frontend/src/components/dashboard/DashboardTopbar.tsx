@@ -41,11 +41,16 @@ export function DashboardTopbar({
   const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false);
   const [newMenuOpen, setNewMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
-  const [activeProject, setActiveProject] = useState("Q3 Quantitative Finance");
+  const userWorkspaceName = storedUser?.full_name
+    ? `${storedUser.full_name}'s Workspace`
+    : "Default Workspace";
+  const [activeProject, setActiveProject] = useState<string>("");
 
   useEffect(() => {
     setMounted(true);
-    setStoredUser(getStoredUser());
+    const user = getStoredUser();
+    setStoredUser(user);
+    setActiveProject(user?.full_name ? `${user.full_name}'s Workspace` : "Default Workspace");
   }, []);
 
   const handleLogout = () => {
@@ -76,7 +81,9 @@ export function DashboardTopbar({
             className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg border border-[#E8E4DF] bg-white/80 hover:bg-white text-xs font-semibold text-[#1E1915] shadow-2xs hover:shadow-xs transition-all"
           >
             <span className="w-2 h-2 rounded-full bg-emerald-500" />
-            <span className="max-w-[150px] sm:max-w-[200px] truncate">{activeProject}</span>
+            <span className="max-w-[150px] sm:max-w-[200px] truncate" suppressHydrationWarning>
+              {mounted ? activeProject || userWorkspaceName : "Workspace"}
+            </span>
             <ChevronDown className="w-3.5 h-3.5 text-[#8C827A]" />
           </button>
 
@@ -86,40 +93,15 @@ export function DashboardTopbar({
               onMouseLeave={() => setWorkspaceMenuOpen(false)}
             >
               <div className="px-2.5 py-1.5 text-[10px] font-mono uppercase tracking-wider text-[#8C827A]">
-                Workspaces & Projects
+                Active Workspace
               </div>
-              {[
-                { name: "Primary Analytics Studio", org: "Local Workspace", count: "DuckDB WASM Active" },
-                { name: "Exploratory Data Lab", org: "Local SQLite & Storage", count: "Ready" },
-              ].map((p) => (
-                <button
-                  key={p.name}
-                  onClick={() => {
-                    setActiveProject(p.name);
-                    setWorkspaceMenuOpen(false);
-                  }}
-                  className={`w-full text-left px-2.5 py-2 rounded-lg text-xs flex items-center justify-between transition-colors ${
-                    activeProject === p.name ? "bg-[#0061FE]/10 text-[#0061FE] font-bold" : "hover:bg-[#F7F5F2] text-[#1E1915]"
-                  }`}
-                >
-                  <div>
-                    <div className="font-semibold leading-none mb-1">{p.name}</div>
-                    <div className="text-[10px] text-[#736B63]">{p.org} · {p.count}</div>
-                  </div>
-                  {activeProject === p.name && <Check className="w-3.5 h-3.5 text-[#0061FE]" />}
-                </button>
-              ))}
-              <div className="border-t border-[#E8E4DF] mt-1 pt-1">
-                <button
-                  onClick={() => {
-                    alert("Create Project modal will open.");
-                    setWorkspaceMenuOpen(false);
-                  }}
-                  className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs text-[#0061FE] hover:bg-[#0061FE]/5 font-semibold flex items-center gap-1.5"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>Create New Project</span>
-                </button>
+              <div className="p-2 rounded-lg bg-[#0061FE]/5 border border-[#0061FE]/20 text-xs">
+                <div className="font-bold text-[#1E1915]">
+                  {activeProject || userWorkspaceName}
+                </div>
+                <div className="text-[10px] text-[#736B63] mt-0.5">
+                  Local DuckDB &amp; Persistent Storage
+                </div>
               </div>
             </div>
           )}

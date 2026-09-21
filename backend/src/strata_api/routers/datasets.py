@@ -1,6 +1,7 @@
 """Datasets management router with persistent storage, DuckDB view registration, and demo dataset seeding."""
 
 import os
+import secrets
 import hashlib
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -12,13 +13,22 @@ from strata_api.config import settings
 from strata_api.core.duckdb_engine import get_duckdb_engine
 from strata_api.parsers import get_parser_for_file
 from strata_api.profiling import compute_column_microstats, detect_pii_columns, calculate_quality_score
-from strata_api.schemas.dataset import DatasetCreate, DatasetResponse
+from strata_api.schemas.dataset import (
+    DatasetCreate,
+    DatasetResponse,
+    DatasetTransformRequest,
+    DatasetTransformResponse,
+    ShareResponse,
+)
 from strata_api.schemas.preview import PreviewResponse, ColumnSchema
+from strata_api.transforms.engine import execute_transformations
 
 router = APIRouter(prefix="/datasets", tags=["Datasets"])
 
 # In-memory registry mapping dataset_id -> metadata dict
 _datasets_db: Dict[str, Dict[str, Any]] = {}
+# In-memory registry mapping share_token -> dataset_id
+_shared_links: Dict[str, Dict[str, Any]] = {}
 
 
 def get_storage_dir() -> str:
@@ -218,8 +228,7 @@ def seed_default_datasets_if_needed():
 
 @router.get("", response_model=List[DatasetResponse])
 async def list_datasets():
-    """List all registered and seeded datasets."""
-    seed_default_datasets_if_needed()
+    """List all registered datasets."""
     items = []
     for r in _datasets_db.values():
         items.append(DatasetResponse(
@@ -242,14 +251,35 @@ async def list_datasets():
     return items
 
 
+@router.delete("")
+async def clear_all_datasets():
+    """Clear all datasets and reset commit history."""
+    from strata_api.versioning.registry import clear_commits
+    for record in list(_datasets_db.values()):
+        file_path = record.get("file_path", "")
+        if file_path and os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+            except Exception:
+                pass
+    _datasets_db.clear()
+    clear_commits()
+    return {"message": "All datasets and commits cleared successfully."}
+
+
+@router.post("/seed")
+async def seed_demo_datasets():
+    """Explicitly seed demo datasets on demand."""
+    seed_default_datasets_if_needed()
+    return {"message": "Demo datasets seeded successfully."}
+
+
 @router.get("/{dataset_id}", response_model=PreviewResponse)
 async def get_dataset_preview(
     dataset_id: str,
     sheet: Optional[str] = Query(None, description="Optional Excel sheet name to view"),
 ):
     """Retrieve full preview, virtual rows, schema, and column micro-stats for a dataset."""
-    seed_default_datasets_if_needed()
-
     record = _datasets_db.get(dataset_id)
     if not record:
         # Check by content_hash prefix or filename
@@ -348,3 +378,283 @@ async def delete_dataset(dataset_id: str):
         except Exception:
             pass
     return {"message": f"Dataset {dataset_id} deleted successfully"}
+
+
+@router.post("/{dataset_id}/transform", response_model=DatasetTransformResponse)
+async def transform_dataset(
+    dataset_id: str,
+    req: DatasetTransformRequest,
+):
+    """Execute point-and-click wrangling operations on a dataset, auto-committing a new immutable version."""
+    record = _datasets_db.get(dataset_id)
+    if not record:
+        for r in _datasets_db.values():
+            if r["content_hash"].startswith(dataset_id) or r["filename"] == dataset_id:
+                record = r
+                break
+    if not record:
+        raise HTTPException(status_code=404, detail=f"Dataset {dataset_id} not found")
+
+    file_path = record["file_path"]
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=400, detail="Underlying dataset file not found on disk")
+
+    # Load into Polars DataFrame
+    try:
+        fmt = record.get("format", "").lower()
+        if fmt == "csv":
+            df = pl.read_csv(file_path, ignore_errors=True, infer_schema_length=2000)
+        elif fmt == "parquet":
+            df = pl.read_parquet(file_path)
+        elif fmt == "json":
+            df = pl.read_json(file_path)
+        elif fmt == "excel":
+            sheet_name = record.get("active_sheet")
+            try:
+                df = pl.read_excel(file_path, sheet_name=sheet_name)
+            except Exception:
+                pdf = pd.read_excel(file_path, sheet_name=sheet_name or 0, engine="openpyxl")
+                df = pl.from_pandas(pdf)
+        else:
+            # Fallback to preview rows if available
+            df = pl.DataFrame(record.get("preview_rows", []))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to load dataset for transformation: {e}")
+
+    prev_rows = len(df)
+    prev_cols = len(df.columns)
+
+    # Execute operations
+    try:
+        transformed_df, python_code = execute_transformations(df, req.operations)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Transformation execution failed: {e}")
+
+    new_rows = len(transformed_df)
+    new_cols = len(transformed_df.columns)
+    row_delta = new_rows - prev_rows
+    col_delta = new_cols - prev_cols
+
+    # Save new version file in storage
+    storage_dir = get_storage_dir()
+    new_version_count = record.get("version_count", 1) + 1
+    new_version_tag = f"v1.{new_version_count - 1}.0"
+    new_filename = f"{record['id']}_v{new_version_count}.parquet"
+    new_file_path = os.path.join(storage_dir, new_filename)
+    transformed_df.write_parquet(new_file_path)
+
+    # Compute new hash
+    new_hash = hashlib.sha256(open(new_file_path, "rb").read()).hexdigest()
+
+    # Recompute microstats & quality
+    preview_rows = transformed_df.head(200).to_dicts()
+    col_stats = compute_column_microstats(transformed_df.head(1000))
+    pii = detect_pii_columns(preview_rows)
+    q_score = calculate_quality_score(col_stats, pii)
+
+    schema_fields = [
+        ColumnSchema(name=name, type=str(dtype), sample_value=preview_rows[0].get(name) if preview_rows else None)
+        for name, dtype in zip(transformed_df.columns, transformed_df.dtypes)
+    ]
+
+    # Register with DuckDB
+    try:
+        duckdb_engine = get_duckdb_engine()
+        duckdb_engine.register_file(record["view_name"], new_file_path)
+    except Exception as e:
+        print(f"Warning: DuckDB update failed: {e}")
+
+    # Record commit in version DAG
+    try:
+        from strata_api.versioning.registry import record_commit
+        op_names = ", ".join([op.op for op in req.operations])
+        record_commit(
+            version_hash=new_hash,
+            dataset_name=record["filename"],
+            version_tag=new_version_tag,
+            message=req.commit_message or f"Wrangling recipe applied: {op_names}",
+            author="Studio Wrangling",
+            parent_hash=record["content_hash"],
+            delta_rows=f"{row_delta:+d} rows",
+            delta_columns=f"{col_delta:+d} cols",
+            added_cols=[c for c in transformed_df.columns if c not in record.get("schema_fields", [])],
+        )
+    except Exception as err:
+        print(f"Warning: Commit recording failed: {err}")
+
+    # Update central record
+    record["file_path"] = new_file_path
+    record["format"] = "parquet"
+    record["content_hash"] = new_hash
+    record["total_rows"] = new_rows
+    record["total_columns"] = new_cols
+    record["size_bytes"] = os.path.getsize(new_file_path)
+    record["latest_version"] = new_version_tag
+    record["version_count"] = new_version_count
+    record["preview_rows"] = preview_rows
+    record["schema_fields"] = [f.model_dump() for f in schema_fields]
+    record["column_stats"] = col_stats
+    record["pii_flags"] = pii
+    record["full_quality"] = q_score
+
+    preview_resp = PreviewResponse(
+        filename=record["filename"],
+        format="parquet",
+        content_hash=new_hash,
+        total_rows=new_rows,
+        total_columns=new_cols,
+        schema_fields=schema_fields,
+        preview_rows=preview_rows,
+        view_name=record["view_name"],
+        column_stats=col_stats,
+        pii_flags=pii,
+        quality_score=q_score,
+    )
+
+    return DatasetTransformResponse(
+        success=True,
+        new_version_tag=new_version_tag,
+        new_content_hash=new_hash,
+        row_delta=row_delta,
+        column_delta=col_delta,
+        generated_python_code=python_code,
+        preview=preview_resp,
+    )
+
+
+@router.post("/{dataset_id}/share", response_model=ShareResponse)
+async def create_share_link(dataset_id: str):
+    """Generate a shareable read-only public preview token."""
+    record = _datasets_db.get(dataset_id)
+    if not record:
+        for r in _datasets_db.values():
+            if r["content_hash"].startswith(dataset_id) or r["filename"] == dataset_id:
+                record = r
+                break
+    if not record:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    token = secrets.token_urlsafe(16)
+    created_at = datetime.now(timezone.utc).isoformat()
+    _shared_links[token] = {
+        "dataset_id": record["id"],
+        "created_at": created_at,
+    }
+
+    return ShareResponse(
+        share_token=token,
+        share_url=f"/shared/{token}",
+        created_at=created_at,
+        dataset_name=record["name"],
+    )
+
+
+@router.get("/shared/{token}", response_model=PreviewResponse)
+async def get_shared_dataset(token: str):
+    """Retrieve read-only dataset preview using a public share token."""
+    share_info = _shared_links.get(token)
+    if not share_info:
+        raise HTTPException(status_code=404, detail="Shared link not found or expired")
+
+    target_id = share_info["dataset_id"]
+    record = _datasets_db.get(target_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="Underlying dataset no longer available")
+
+    schema_fields = [ColumnSchema(**f) for f in record.get("schema_fields", [])]
+
+    return PreviewResponse(
+        filename=record["filename"],
+        format=record["format"],
+        content_hash=record["content_hash"],
+        total_rows=record["total_rows"],
+        total_columns=record["total_columns"],
+        schema_fields=schema_fields,
+        preview_rows=record.get("preview_rows", []),
+        view_name=record.get("view_name"),
+        column_stats=record.get("column_stats"),
+        pii_flags=record.get("pii_flags"),
+        quality_score=record.get("full_quality"),
+    )
+
+
+@router.post("/{dataset_id}/convert")
+async def convert_dataset_format(
+    dataset_id: str,
+    target_format: str = Query(..., description="Target format: csv, parquet, excel, json"),
+):
+    """Convert any registered dataset to CSV, Parquet, Excel (.xlsx), or JSON on the fly."""
+    import io
+    from fastapi.responses import Response
+
+    record = _datasets_db.get(dataset_id)
+    if not record:
+        for r in _datasets_db.values():
+            if r["content_hash"].startswith(dataset_id) or r["filename"] == dataset_id:
+                record = r
+                break
+    if not record:
+        raise HTTPException(status_code=404, detail=f"Dataset {dataset_id} not found")
+
+    file_path = record["file_path"]
+    fmt = record.get("format", "").lower()
+
+    # Load into Polars DataFrame
+    try:
+        if fmt == "csv":
+            df = pl.read_csv(file_path, ignore_errors=True, infer_schema_length=2000)
+        elif fmt == "parquet":
+            df = pl.read_parquet(file_path)
+        elif fmt == "json":
+            df = pl.read_json(file_path)
+        elif fmt == "excel":
+            sheet_name = record.get("active_sheet")
+            try:
+                df = pl.read_excel(file_path, sheet_name=sheet_name)
+            except Exception:
+                pdf = pd.read_excel(file_path, sheet_name=sheet_name or 0, engine="openpyxl")
+                df = pl.from_pandas(pdf)
+        else:
+            df = pl.DataFrame(record.get("preview_rows", []))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to load dataset: {e}")
+
+    target_fmt = target_format.lower().strip()
+    base_name = record["filename"].rsplit(".", 1)[0]
+
+    if target_fmt in ("csv", "tsv"):
+        buffer = io.BytesIO()
+        df.write_csv(buffer)
+        content = buffer.getvalue()
+        media_type = "text/csv"
+        filename = f"{base_name}.csv"
+    elif target_fmt == "parquet":
+        buffer = io.BytesIO()
+        df.write_parquet(buffer)
+        content = buffer.getvalue()
+        media_type = "application/octet-stream"
+        filename = f"{base_name}.parquet"
+    elif target_fmt in ("excel", "xlsx"):
+        buffer = io.BytesIO()
+        pdf = df.to_pandas()
+        with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+            pdf.to_excel(writer, index=False, sheet_name="Data")
+        content = buffer.getvalue()
+        media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        filename = f"{base_name}.xlsx"
+    elif target_fmt == "json":
+        buffer = io.BytesIO()
+        df.write_json(buffer)
+        content = buffer.getvalue()
+        media_type = "application/json"
+        filename = f"{base_name}.json"
+    else:
+        raise HTTPException(status_code=400, detail=f"Unsupported target format '{target_format}'. Choose csv, parquet, excel, or json.")
+
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
