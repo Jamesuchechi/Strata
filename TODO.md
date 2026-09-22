@@ -54,15 +54,15 @@ Every feature in the master blueprint belongs to exactly one phase below. New fe
 
 ## Phase 3 — Scale-Ready Platform
 
-- [ ] **Isolated Compute Sandboxes:** 13.3, 7.4, 7.5, 7.6, 7.7, 7.8, 7.9 (Containerized Python runners for heavy ETL, scheduled pipelines, dead-letter queues)
+- [x] **Isolated Compute Sandboxes:** 13.3, 7.4, 7.5, 7.6, 7.7, 7.8, 7.9 (Containerized Python runners for heavy ETL, scheduled pipelines, dead-letter queues)
 - [x] **Branching & Merging:** 2.5, 2.6, 2.13, 2.15, 2.16 (Git-style branching, visual merge conflict resolution, row/col blame)
 - [x] **Full Lineage Ecosystem:** 6.2, 6.5, 6.6, 6.7, 6.8, 6.9 (Interactive DAG, model registration, OpenLineage export, deletion protection)
 - [x] **Semantic Vector Search:** 10.2, 10.3, 10.4, 10.6, 10.7 (Embedding-based natural language search across datasets)
 - [x] **Public Showcase & Sharing:** 11.2, 11.3, 11.4, 11.5, 11.6, 11.7 (Public dataset showcase, embed widgets, BibTeX citations, forking)
-- [ ] **Integrations:** 12.1, 12.2, 12.3, 12.4, 12.5, 12.6, 12.7, 12.8, 12.9, 12.10 (JupyterLab, VS Code, MLflow, W&B, dbt, Slack alerts)
-- [ ] **Collaboration Advanced:** 9.6, 9.7, 9.8, 9.9, 9.10 (Cell/row comments, review approvals, asset transfer)
-- [ ] **Security & Compliance:** 16.1, 16.2, 16.3, 16.4, 16.5, 16.6 (AES-256/TLS 1.3, SSO, audit logs, PII export masking, GDPR workflows)
-- [ ] **Admin & Operations:** 17.1, 17.2, 17.3, 17.4, 17.5 (Admin console, health dashboard, rate limiting, worker queue observability)
+- [x] **Integrations:** 12.1, 12.2, 12.3, 12.4, 12.5, 12.6, 12.7, 12.8, 12.9, 12.10 (JupyterLab, VS Code, MLflow, W&B, dbt, Slack alerts)
+- [x] **Collaboration Advanced:** 9.6, 9.7, 9.8, 9.9, 9.10 (Cell/row comments, review approvals, asset transfer)
+- [x] **Security & Compliance:** 16.1, 16.2, 16.3, 16.4, 16.5, 16.6 (AES-256/TLS 1.3, SSO, audit logs, PII export masking, GDPR workflows)
+- [x] **Admin & Operations:** 17.1, 17.2, 17.3, 17.4, 17.5 (Admin console, health dashboard, rate limiting, worker queue observability)
 
 ---
 

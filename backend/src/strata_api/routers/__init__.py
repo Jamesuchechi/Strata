@@ -14,6 +14,9 @@ from strata_api.routers.branches import router as branches_router
 from strata_api.routers.lineage import router as lineage_router
 from strata_api.routers.discovery import router as discovery_router
 from strata_api.routers.showcase import router as showcase_router
+from strata_api.routers.pipelines import router as pipelines_router
+from strata_api.routers.integrations import router as integrations_router
+from strata_api.routers.security import router as security_router
 
 __all__ = [
     "health_router",
@@ -30,4 +33,7 @@ __all__ = [
     "lineage_router",
     "discovery_router",
     "showcase_router",
+    "pipelines_router",
+    "integrations_router",
+    "security_router",
 ]

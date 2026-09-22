@@ -311,3 +311,176 @@ async def set_dataset_permission(workspace_id: str, req: UpdateDatasetPermission
     overrides[req.dataset_id] = req.min_role
     log_activity(workspace_id, "James Uchechi", "permission_override", f"Set {req.dataset_id} minimum role to {req.min_role}")
     return {"message": f"Permission updated for {req.dataset_id}", "permissions": overrides}
+
+
+# ---------------------------------------------------------------------------
+# Advanced Collaboration: Cell/Row Comments & Review Approvals (Pillars 9.6, 9.7, 9.10)
+# ---------------------------------------------------------------------------
+
+_dataset_comments_db: Dict[str, List[Dict[str, Any]]] = {
+    "churn_demo": [
+        {
+            "id": "comment_1",
+            "dataset_id": "churn_demo",
+            "row_index": 3,
+            "column_name": "churn_probability",
+            "author_name": "Dr. Sarah Chen",
+            "author_role": "Admin",
+            "comment": "Unusual spike in churn probability (0.65) for an 8-month customer with high monthly charges. Validate attribution.",
+            "resolved": False,
+            "created_at": "2026-09-20T14:10:00Z",
+        }
+    ]
+}
+
+_review_requests_db: List[Dict[str, Any]] = [
+    {
+        "id": "rev_1",
+        "dataset_name": "customer_churn.csv",
+        "source_branch": "feature/clean-outliers",
+        "target_branch": "main",
+        "title": "Merge Outlier Clipping and Retention Ratios into Production",
+        "author": "Marcus Vance",
+        "status": "pending_review",  # pending_review, approved, changes_requested, merged
+        "approvals": ["Dr. Sarah Chen"],
+        "min_approvals_required": 1,
+        "created_at": "2026-09-21T10:00:00Z",
+    }
+]
+
+
+class DatasetCommentRequest(BaseModel):
+    row_index: Optional[int] = None
+    column_name: Optional[str] = None
+    comment: str
+    author_name: str = "James Uchechi"
+    author_role: str = "Owner"
+
+
+class CreateReviewRequest(BaseModel):
+    dataset_name: str
+    source_branch: str
+    target_branch: str = "main"
+    title: str
+    author: str = "James Uchechi"
+
+
+class AssetTransferRequest(BaseModel):
+    dataset_id: str
+    from_workspace_id: str
+    to_workspace_id: str
+    new_owner_email: Optional[str] = None
+
+
+@router.get("/comments/{dataset_id}")
+async def get_dataset_comments(dataset_id: str):
+    """List cell and row comments on a dataset (Pillar 9.6)."""
+    return {"comments": _dataset_comments_db.get(dataset_id, [])}
+
+
+@router.post("/comments/{dataset_id}")
+async def add_dataset_comment(dataset_id: str, req: DatasetCommentRequest):
+    """Add cell-level or row-level comment (Pillar 9.6)."""
+    comment_id = f"comment_{uuid.uuid4().hex[:8]}"
+    item = {
+        "id": comment_id,
+        "dataset_id": dataset_id,
+        "row_index": req.row_index,
+        "column_name": req.column_name,
+        "author_name": req.author_name,
+        "author_role": req.author_role,
+        "comment": req.comment,
+        "resolved": False,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    _dataset_comments_db.setdefault(dataset_id, []).append(item)
+    return {"status": "created", "comment": item}
+
+
+@router.post("/comments/{dataset_id}/{comment_id}/resolve")
+async def resolve_dataset_comment(dataset_id: str, comment_id: str):
+    """Mark a cell/row comment thread as resolved (Pillar 9.6)."""
+    comments = _dataset_comments_db.get(dataset_id, [])
+    for c in comments:
+        if c["id"] == comment_id:
+            c["resolved"] = True
+            return {"status": "resolved", "comment": c}
+    raise HTTPException(status_code=404, detail="Comment not found")
+
+
+@router.get("/reviews")
+async def list_review_requests(dataset_name: Optional[str] = None):
+    """List branch merge and dataset release review requests (Pillar 9.7)."""
+    reviews = list(_review_requests_db)
+    if dataset_name:
+        reviews = [r for r in reviews if r["dataset_name"] == dataset_name]
+    return {"reviews": reviews, "total": len(reviews)}
+
+
+@router.post("/reviews")
+async def create_review_request(req: CreateReviewRequest):
+    """Open a dataset version review / pull request before merging (Pillar 9.7)."""
+    rev_id = f"rev_{uuid.uuid4().hex[:8]}"
+    rev = {
+        "id": rev_id,
+        "dataset_name": req.dataset_name,
+        "source_branch": req.source_branch,
+        "target_branch": req.target_branch,
+        "title": req.title,
+        "author": req.author,
+        "status": "pending_review",
+        "approvals": [],
+        "min_approvals_required": 1,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    _review_requests_db.append(rev)
+    return {"status": "created", "review": rev}
+
+
+@router.post("/reviews/{review_id}/approve")
+async def approve_review_request(review_id: str, approver_name: str = "James Uchechi"):
+    """Approve a dataset version pull request (Pillar 9.7)."""
+    rev = next((r for r in _review_requests_db if r["id"] == review_id), None)
+    if not rev:
+        raise HTTPException(status_code=404, detail="Review request not found")
+
+    if approver_name not in rev["approvals"]:
+        rev["approvals"].append(approver_name)
+    if len(rev["approvals"]) >= rev["min_approvals_required"]:
+        rev["status"] = "approved"
+
+    return {"status": "approved", "review": rev}
+
+
+@router.post("/transfer-asset")
+async def transfer_workspace_asset(req: AssetTransferRequest):
+    """Transfer dataset ownership from one workspace to another (Pillar 9.10)."""
+    from strata_api.routers.datasets import _datasets_db
+    dataset = _datasets_db.get(req.dataset_id)
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    from_ws = _workspaces_db.get(req.from_workspace_id)
+    to_ws = _workspaces_db.get(req.to_workspace_id)
+    if not from_ws or not to_ws:
+        raise HTTPException(status_code=404, detail="Origin or destination workspace not found")
+
+    dataset["workspace_id"] = req.to_workspace_id
+    if req.new_owner_email:
+        dataset["owner"] = req.new_owner_email
+
+    log_activity(
+        req.to_workspace_id,
+        "James Uchechi",
+        "asset_transfer",
+        f"Transferred '{dataset['name']}' from '{from_ws['name']}' to '{to_ws['name']}'",
+        badge_color="indigo",
+    )
+
+    return {
+        "status": "transferred",
+        "dataset_id": req.dataset_id,
+        "from_workspace": from_ws["name"],
+        "to_workspace": to_ws["name"],
+    }
+

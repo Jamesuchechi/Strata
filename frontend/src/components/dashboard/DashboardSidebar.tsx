@@ -139,6 +139,13 @@ export function DashboardSidebar({
       matches: (path: string) => path.startsWith("/workspace"),
     },
     {
+      id: "pipelines",
+      href: "/pipelines",
+      label: "Pipelines & Compute",
+      icon: <Cpu className="w-4 h-4 text-rose-600" />,
+      matches: (path: string) => path.startsWith("/pipelines"),
+    },
+    {
       id: "billing",
       href: "/billing",
       label: "Billing & Quotas",

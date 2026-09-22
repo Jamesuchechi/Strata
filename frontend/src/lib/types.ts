@@ -493,4 +493,161 @@ export interface LicenseItem {
   commercial_use: boolean;
 }
 
+// ---------------------------------------------------------------------------
+// Track 3.4: Pipelines, Compute Sandboxes, Integrations, Security & Admin
+// ---------------------------------------------------------------------------
+
+export interface PipelineItem {
+  id: string;
+  name: string;
+  description: string;
+  target_dataset_id: string;
+  schedule: string;
+  trigger: string;
+  is_active: boolean;
+  timeout_seconds: number;
+  max_memory_mb: number;
+  steps: Array<{
+    step_id: string;
+    name: string;
+    type: string;
+    condition?: string;
+    expr?: string;
+    output_col?: string;
+    columns?: string[];
+  }>;
+  created_at: string;
+  last_run_at?: string;
+  last_status?: string;
+}
+
+export interface PipelineRun {
+  run_id: string;
+  pipeline_id: string;
+  pipeline_name: string;
+  status: "success" | "failed" | "running";
+  started_at: string;
+  completed_at: string;
+  duration_ms: number;
+  input_rows: number;
+  output_rows: number;
+  output_columns: number;
+  columns?: string[];
+  sample_preview?: Array<Record<string, any>>;
+  logs: string[];
+  error?: string;
+}
+
+export interface PipelineTemplate {
+  id: string;
+  name: string;
+  description: string;
+  target_dataset: string;
+  steps: any[];
+  schedule: string;
+}
+
+export interface DeadLetterItem {
+  dlq_id: string;
+  run_id: string;
+  pipeline_id: string;
+  error: string;
+  timestamp: string;
+  retry_count: number;
+  resolved: boolean;
+}
+
+export interface IntegrationConnector {
+  id: string;
+  name: string;
+  status: string;
+  type: string;
+}
+
+export interface IntegrationStatusResponse {
+  connectors: IntegrationConnector[];
+  webhooks: Array<{
+    id: string;
+    service: string;
+    name: string;
+    url: string;
+    events: string[];
+    is_active: boolean;
+  }>;
+  recent_events: Array<{
+    id: string;
+    service: string;
+    event_type: string;
+    payload: any;
+    status: string;
+    timestamp: string;
+  }>;
+}
+
+export interface AuditLogItem {
+  id: string;
+  actor: string;
+  action: string;
+  target: string;
+  ip_address: string;
+  timestamp: string;
+  details?: Record<string, any>;
+  prev_hash: string;
+  hash: string;
+}
+
+export interface AdminOverview {
+  cluster_name: string;
+  version: string;
+  uptime_hours: number;
+  users_count: number;
+  workspaces_count: number;
+  datasets_count: number;
+  total_storage_bytes: number;
+  total_storage_mb: number;
+  active_duckdb_pools: number;
+  isolated_sandboxes_running: number;
+  platform_status: string;
+}
+
+export interface PlatformHealth {
+  timestamp: string;
+  cpu_usage_pct: number;
+  memory_used_mb: number;
+  memory_total_mb: number;
+  memory_usage_pct: number;
+  disk_used_gb: number;
+  disk_total_gb: number;
+  disk_usage_pct: number;
+  duckdb_latency_p95_ms: number;
+  http_latency_p95_ms: number;
+  api_availability_pct: number;
+}
+
+export interface DatasetComment {
+  id: string;
+  dataset_id: string;
+  row_index?: number;
+  column_name?: string;
+  author_name: string;
+  author_role: string;
+  comment: string;
+  resolved: boolean;
+  created_at: string;
+}
+
+export interface ReviewRequest {
+  id: string;
+  dataset_name: string;
+  source_branch: string;
+  target_branch: string;
+  title: string;
+  author: string;
+  status: "pending_review" | "approved" | "changes_requested" | "merged";
+  approvals: string[];
+  min_approvals_required: number;
+  created_at: string;
+}
+
+
 

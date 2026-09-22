@@ -761,7 +761,200 @@ export async function forkShowcaseDataset(datasetId: string): Promise<{
   return res.json();
 }
 
+// -------------------------------------------------------------
+// Track 3.4: Pipelines, Compute Sandboxes, Integrations, Security & Admin
+// -------------------------------------------------------------
+
+export async function fetchPipelines(): Promise<{ pipelines: import("./types").PipelineItem[]; total: number }> {
+  const res = await fetch(`${API_BASE}/pipelines`);
+  if (!res.ok) throw new Error(`Failed to fetch pipelines (${res.status})`);
+  return res.json();
+}
+
+export async function fetchPipelineTemplates(): Promise<{ templates: import("./types").PipelineTemplate[] }> {
+  const res = await fetch(`${API_BASE}/pipelines/templates`);
+  if (!res.ok) throw new Error(`Failed to fetch pipeline templates (${res.status})`);
+  return res.json();
+}
+
+export async function createPipeline(req: any): Promise<any> {
+  const res = await fetch(`${API_BASE}/pipelines`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(req),
+  });
+  if (!res.ok) throw new Error(`Failed to create pipeline (${res.status})`);
+  return res.json();
+}
+
+export async function pipelineDryRun(req: { dataset_id: string; steps: any[]; sample_rows_limit?: number }): Promise<any> {
+  const res = await fetch(`${API_BASE}/pipelines/dry-run`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(req),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Dry-run failed (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function runPipeline(pipelineId: string): Promise<{ status: string; run: import("./types").PipelineRun }> {
+  const res = await fetch(`${API_BASE}/pipelines/${encodeURIComponent(pipelineId)}/run`, {
+    method: "POST",
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Pipeline execution failed (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function fetchPipelineRuns(pipelineId?: string): Promise<{ runs: import("./types").PipelineRun[]; total: number }> {
+  const url = pipelineId ? `${API_BASE}/pipelines/runs?pipeline_id=${encodeURIComponent(pipelineId)}` : `${API_BASE}/pipelines/runs`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Failed to fetch pipeline runs (${res.status})`);
+  return res.json();
+}
+
+export async function fetchDeadLetterQueue(): Promise<{ dlq: import("./types").DeadLetterItem[]; total_failed: number }> {
+  const res = await fetch(`${API_BASE}/pipelines/dlq`);
+  if (!res.ok) throw new Error(`Failed to fetch DLQ (${res.status})`);
+  return res.json();
+}
+
+export async function retryDeadLetterJob(dlqId: string): Promise<any> {
+  const res = await fetch(`${API_BASE}/pipelines/dlq/${encodeURIComponent(dlqId)}/retry`, {
+    method: "POST",
+  });
+  if (!res.ok) throw new Error(`Failed to retry DLQ job (${res.status})`);
+  return res.json();
+}
+
+export async function fetchIntegrationsStatus(): Promise<import("./types").IntegrationStatusResponse> {
+  const res = await fetch(`${API_BASE}/integrations/status`);
+  if (!res.ok) throw new Error(`Failed to fetch integrations status (${res.status})`);
+  return res.json();
+}
+
+export async function fetchIntegrationCodeTemplates(datasetName?: string, version?: string): Promise<{ dataset_name: string; version: string; templates: Record<string, string> }> {
+  const url = `${API_BASE}/integrations/code-templates?dataset_name=${encodeURIComponent(datasetName || "customer_churn.csv")}&version=${encodeURIComponent(version || "v1.2.0")}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Failed to fetch integration code templates (${res.status})`);
+  return res.json();
+}
+
+export async function testWebhookAlert(service: string, message: string): Promise<any> {
+  const res = await fetch(`${API_BASE}/integrations/webhooks/test`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ service, message }),
+  });
+  if (!res.ok) throw new Error(`Failed to send test webhook alert (${res.status})`);
+  return res.json();
+}
+
+export async function fetchEncryptionStatus(): Promise<any> {
+  const res = await fetch(`${API_BASE}/security/encryption-status`);
+  if (!res.ok) throw new Error(`Failed to fetch encryption status (${res.status})`);
+  return res.json();
+}
+
+export async function fetchAuditLogs(actor?: string, action?: string): Promise<{ chain_integrity_verified: boolean; total_records: number; audit_logs: import("./types").AuditLogItem[] }> {
+  const url = new URL(`${API_BASE}/security/audit-logs`);
+  if (actor) url.searchParams.set("actor", actor);
+  if (action) url.searchParams.set("action", action);
+  const res = await fetch(url.toString());
+  if (!res.ok) throw new Error(`Failed to fetch audit logs (${res.status})`);
+  return res.json();
+}
+
+export async function maskDatasetExport(datasetId: string, maskRules: string[]): Promise<any> {
+  const res = await fetch(`${API_BASE}/security/mask-export`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ dataset_id: datasetId, mask_rules: maskRules }),
+  });
+  if (!res.ok) throw new Error(`Failed to mask dataset export (${res.status})`);
+  return res.json();
+}
+
+export async function gdprRedactCustomer(customerId: string, datasetIds?: string[]): Promise<any> {
+  const res = await fetch(`${API_BASE}/security/gdpr-redact`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ customer_identifier_value: customerId, dataset_ids: datasetIds }),
+  });
+  if (!res.ok) throw new Error(`Failed to execute GDPR redaction (${res.status})`);
+  return res.json();
+}
+
+export async function fetchAdminOverview(): Promise<import("./types").AdminOverview> {
+  const res = await fetch(`${API_BASE}/security/admin/overview`);
+  if (!res.ok) throw new Error(`Failed to fetch admin overview (${res.status})`);
+  return res.json();
+}
+
+export async function fetchPlatformHealth(): Promise<import("./types").PlatformHealth> {
+  const res = await fetch(`${API_BASE}/security/admin/health-metrics`);
+  if (!res.ok) throw new Error(`Failed to fetch platform health metrics (${res.status})`);
+  return res.json();
+}
+
+export async function fetchRateLimits(): Promise<any> {
+  const res = await fetch(`${API_BASE}/security/admin/rate-limits`);
+  if (!res.ok) throw new Error(`Failed to fetch rate limits (${res.status})`);
+  return res.json();
+}
+
+export async function fetchWorkerQueues(): Promise<any> {
+  const res = await fetch(`${API_BASE}/security/admin/queues`);
+  if (!res.ok) throw new Error(`Failed to fetch worker queues (${res.status})`);
+  return res.json();
+}
+
+export async function fetchDatasetComments(datasetId: string): Promise<{ comments: import("./types").DatasetComment[] }> {
+  const res = await fetch(`${API_BASE}/workspaces/comments/${encodeURIComponent(datasetId)}`);
+  if (!res.ok) throw new Error(`Failed to fetch dataset comments (${res.status})`);
+  return res.json();
+}
+
+export async function addDatasetComment(datasetId: string, req: { row_index?: number; column_name?: string; comment: string }): Promise<any> {
+  const res = await fetch(`${API_BASE}/workspaces/comments/${encodeURIComponent(datasetId)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(req),
+  });
+  if (!res.ok) throw new Error(`Failed to add comment (${res.status})`);
+  return res.json();
+}
+
+export async function resolveDatasetComment(datasetId: string, commentId: string): Promise<any> {
+  const res = await fetch(`${API_BASE}/workspaces/comments/${encodeURIComponent(datasetId)}/${encodeURIComponent(commentId)}/resolve`, {
+    method: "POST",
+  });
+  if (!res.ok) throw new Error(`Failed to resolve comment (${res.status})`);
+  return res.json();
+}
+
+export async function fetchReviewRequests(datasetName?: string): Promise<{ reviews: import("./types").ReviewRequest[]; total: number }> {
+  const url = datasetName ? `${API_BASE}/workspaces/reviews?dataset_name=${encodeURIComponent(datasetName)}` : `${API_BASE}/workspaces/reviews`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Failed to fetch review requests (${res.status})`);
+  return res.json();
+}
+
+export async function approveReviewRequest(reviewId: string): Promise<any> {
+  const res = await fetch(`${API_BASE}/workspaces/reviews/${encodeURIComponent(reviewId)}/approve`, {
+    method: "POST",
+  });
+  if (!res.ok) throw new Error(`Failed to approve review (${res.status})`);
+  return res.json();
+}
+
 export * from "./api/auth";
+
 
 
 

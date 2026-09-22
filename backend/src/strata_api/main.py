@@ -18,6 +18,9 @@ from strata_api.routers import (
     lineage_router,
     discovery_router,
     showcase_router,
+    pipelines_router,
+    integrations_router,
+    security_router,
 )
 
 
@@ -64,6 +67,9 @@ def create_app() -> FastAPI:
     app.include_router(lineage_router, prefix=settings.API_V1_PREFIX)
     app.include_router(discovery_router, prefix=settings.API_V1_PREFIX)
     app.include_router(showcase_router, prefix=settings.API_V1_PREFIX)
+    app.include_router(pipelines_router, prefix=settings.API_V1_PREFIX)
+    app.include_router(integrations_router, prefix=settings.API_V1_PREFIX)
+    app.include_router(security_router, prefix=settings.API_V1_PREFIX)
 
     from strata_api.routers.datasets import get_shared_dataset
     app.add_api_route(
