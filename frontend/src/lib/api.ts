@@ -622,7 +622,147 @@ export async function exportOpenLineage(format: "openlineage" | "graphviz"): Pro
   return res.json();
 }
 
+// -------------------------------------------------------------
+// Track 3.3: Semantic Vector Search, Discovery & Showcase
+// -------------------------------------------------------------
+
+export async function searchSemanticDatasets(params: {
+  q?: string;
+  column?: string;
+  domain?: string;
+  format?: string;
+  min_quality?: number;
+  min_rows?: number;
+  max_rows?: number;
+}): Promise<import("./types").SemanticSearchResponse> {
+  const url = new URL(`${API_BASE}/discovery/semantic-search`);
+  if (params.q) url.searchParams.set("q", params.q);
+  if (params.column) url.searchParams.set("column", params.column);
+  if (params.domain) url.searchParams.set("domain", params.domain);
+  if (params.format && params.format !== "all") url.searchParams.set("format", params.format);
+  if (params.min_quality !== undefined) url.searchParams.set("min_quality", params.min_quality.toString());
+  if (params.min_rows !== undefined) url.searchParams.set("min_rows", params.min_rows.toString());
+  if (params.max_rows !== undefined) url.searchParams.set("max_rows", params.max_rows.toString());
+
+  const res = await fetch(url.toString());
+  if (!res.ok) throw new Error(`Failed to execute semantic search (${res.status})`);
+  return res.json();
+}
+
+export async function toggleDatasetFavorite(datasetId: string): Promise<{ dataset_id: string; is_favorite: boolean; total_favorites: number }> {
+  const res = await fetch(`${API_BASE}/discovery/favorites/${encodeURIComponent(datasetId)}`, {
+    method: "POST",
+  });
+  if (!res.ok) throw new Error(`Failed to toggle favorite (${res.status})`);
+  return res.json();
+}
+
+export async function fetchDatasetFavorites(): Promise<{ favorites: any[]; count: number }> {
+  const res = await fetch(`${API_BASE}/discovery/favorites`);
+  if (!res.ok) throw new Error(`Failed to fetch favorites (${res.status})`);
+  return res.json();
+}
+
+export async function recordDatasetRecent(datasetId: string): Promise<any> {
+  const res = await fetch(`${API_BASE}/discovery/recents/${encodeURIComponent(datasetId)}`, {
+    method: "POST",
+  });
+  if (!res.ok) throw new Error(`Failed to record recent visit (${res.status})`);
+  return res.json();
+}
+
+export async function fetchDatasetRecents(): Promise<{ recents: any[]; count: number }> {
+  const res = await fetch(`${API_BASE}/discovery/recents`);
+  if (!res.ok) throw new Error(`Failed to fetch recents (${res.status})`);
+  return res.json();
+}
+
+export async function fetchDatasetRecommendations(datasetId: string): Promise<import("./types").RecommendationItem[]> {
+  const res = await fetch(`${API_BASE}/discovery/recommendations/${encodeURIComponent(datasetId)}`);
+  if (!res.ok) throw new Error(`Failed to fetch recommendations (${res.status})`);
+  return res.json();
+}
+
+export async function fetchShowcaseDatasets(params?: {
+  domain?: string;
+  tag?: string;
+  q?: string;
+  sort_by?: string;
+}): Promise<import("./types").ShowcaseListResponse> {
+  const url = new URL(`${API_BASE}/showcase`);
+  if (params?.domain && params.domain !== "All") url.searchParams.set("domain", params.domain);
+  if (params?.tag) url.searchParams.set("tag", params.tag);
+  if (params?.q) url.searchParams.set("q", params.q);
+  if (params?.sort_by) url.searchParams.set("sort_by", params.sort_by);
+
+  const res = await fetch(url.toString());
+  if (!res.ok) throw new Error(`Failed to fetch showcase datasets (${res.status})`);
+  return res.json();
+}
+
+export async function fetchShowcaseDataset(datasetId: string): Promise<{
+  dataset: import("./types").ShowcaseDataset;
+  citations: import("./types").CitationResponse;
+  embeds: import("./types").EmbedConfigResponse;
+}> {
+  const res = await fetch(`${API_BASE}/showcase/${encodeURIComponent(datasetId)}`);
+  if (!res.ok) throw new Error(`Failed to fetch showcase item (${res.status})`);
+  return res.json();
+}
+
+export async function toggleShowcaseStar(datasetId: string): Promise<{ dataset_id: string; is_starred: boolean; total_stars: number }> {
+  const res = await fetch(`${API_BASE}/showcase/${encodeURIComponent(datasetId)}/star`, {
+    method: "POST",
+  });
+  if (!res.ok) throw new Error(`Failed to toggle star (${res.status})`);
+  return res.json();
+}
+
+export async function trackShowcaseDownload(datasetId: string): Promise<any> {
+  const res = await fetch(`${API_BASE}/showcase/${encodeURIComponent(datasetId)}/download`, {
+    method: "POST",
+  });
+  if (!res.ok) throw new Error(`Failed to track download (${res.status})`);
+  return res.json();
+}
+
+export async function fetchShowcaseCitation(datasetId: string): Promise<import("./types").CitationResponse> {
+  const res = await fetch(`${API_BASE}/showcase/${encodeURIComponent(datasetId)}/citation`);
+  if (!res.ok) throw new Error(`Failed to fetch citation (${res.status})`);
+  return res.json();
+}
+
+export async function fetchShowcaseEmbedConfig(datasetId: string, theme: "light" | "dark" = "light", showSchema: boolean = true): Promise<import("./types").EmbedConfigResponse> {
+  const res = await fetch(`${API_BASE}/showcase/${encodeURIComponent(datasetId)}/embed-config?theme=${theme}&show_schema=${showSchema}`);
+  if (!res.ok) throw new Error(`Failed to fetch embed config (${res.status})`);
+  return res.json();
+}
+
+export async function fetchLicensesCatalog(): Promise<{ licenses: import("./types").LicenseItem[] }> {
+  const res = await fetch(`${API_BASE}/showcase/licenses`);
+  if (!res.ok) throw new Error(`Failed to fetch licenses (${res.status})`);
+  return res.json();
+}
+
+export async function forkShowcaseDataset(datasetId: string): Promise<{
+  status: string;
+  message: string;
+  new_dataset_id: string;
+  fork_count: number;
+  dataset: any;
+}> {
+  const res = await fetch(`${API_BASE}/showcase/${encodeURIComponent(datasetId)}/fork`, {
+    method: "POST",
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Failed to fork showcase dataset (${res.status})`);
+  }
+  return res.json();
+}
+
 export * from "./api/auth";
+
 
 
 

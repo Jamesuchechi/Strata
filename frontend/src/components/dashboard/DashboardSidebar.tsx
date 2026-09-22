@@ -25,6 +25,7 @@ import {
   BarChart3,
   Building2,
   CreditCard,
+  Globe,
 } from "lucide-react";
 import { fetchDatasets } from "@/lib/api";
 import { DatasetItem } from "@/lib/types";
@@ -87,6 +88,13 @@ export function DashboardSidebar({
       label: "Datasets & Tables",
       icon: <Database className="w-4 h-4 text-emerald-600" />,
       matches: (path: string) => path.startsWith("/datasets"),
+    },
+    {
+      id: "showcase",
+      href: "/showcase",
+      label: "Public Showcase & Hub",
+      icon: <Globe className="w-4 h-4 text-cyan-600" />,
+      matches: (path: string) => path.startsWith("/showcase"),
     },
     {
       id: "visualizer",

@@ -396,3 +396,101 @@ export interface DeletionProtectionCheck {
   blocking_models: RegisteredModel[];
 }
 
+// ---------------------------------------------------------------------------
+// Track 3.3: Semantic Search, Discovery & Public Showcase
+// ---------------------------------------------------------------------------
+
+export interface SemanticSearchResultItem {
+  id: string;
+  name: string;
+  filename: string;
+  description?: string;
+  tags: string[];
+  format: string;
+  total_rows: number;
+  total_columns: number;
+  quality_score?: number;
+  similarity_score: number;
+  matched_reasons: string[];
+  matched_columns: string[];
+}
+
+export interface SemanticSearchResponse {
+  query?: string;
+  total_matches: number;
+  results: SemanticSearchResultItem[];
+}
+
+export interface RecommendationItem {
+  id: string;
+  name: string;
+  description?: string;
+  format: string;
+  similarity_score: number;
+  rationale: string;
+  shared_columns: string[];
+}
+
+export interface ShowcaseDataset {
+  id: string;
+  title: string;
+  slug: string;
+  domain: string;
+  description: string;
+  author: string;
+  author_avatar?: string;
+  author_verified: boolean;
+  format: string;
+  license: string;
+  doi?: string;
+  tags: string[];
+  total_rows: number;
+  total_columns: number;
+  size_bytes: number;
+  quality_score: number;
+  stars: number;
+  downloads: number;
+  forks: number;
+  updated_at: string;
+  is_starred?: boolean;
+  schema_fields?: Array<{
+    name: string;
+    type: string;
+    description?: string;
+  }>;
+  sample_rows?: Array<Record<string, any>>;
+  sample_query?: string;
+}
+
+export interface ShowcaseListResponse {
+  total: number;
+  domains: string[];
+  datasets: ShowcaseDataset[];
+}
+
+export interface CitationResponse {
+  doi: string;
+  bibtex: string;
+  apa: string;
+  ieee: string;
+  harvard: string;
+  chicago: string;
+}
+
+export interface EmbedConfigResponse {
+  embed_url: string;
+  iframe: string;
+  react: string;
+  markdown: string;
+}
+
+export interface LicenseItem {
+  id: string;
+  name: string;
+  type: string;
+  url: string;
+  description: string;
+  commercial_use: boolean;
+}
+
+

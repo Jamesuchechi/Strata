@@ -124,8 +124,8 @@ def register_dataset_in_store(
 
 
 def seed_default_datasets_if_needed():
-    """Seed 3 initial datasets if registry is empty."""
-    if _datasets_db:
+    """Seed 3 initial datasets if churn_demo is not present."""
+    if "churn_demo" in _datasets_db:
         return
 
     storage_dir = get_storage_dir()
