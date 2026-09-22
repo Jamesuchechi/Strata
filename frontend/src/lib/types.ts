@@ -344,3 +344,55 @@ export interface DatasetBlameResponse {
   }>;
 }
 
+export interface RegisteredModel {
+  id: string;
+  name: string;
+  framework: string;
+  algorithm: string;
+  version: string;
+  dataset_name: string;
+  dataset_version_hash: string;
+  experiment_tracker: string;
+  run_id: string;
+  metrics: Record<string, number>;
+  hyperparameters: Record<string, any>;
+  artifact_uri: string;
+  created_at: string;
+  author: string;
+  status: "production" | "staging" | "archived";
+}
+
+export interface LineageGraphResponse {
+  nodes: Array<{
+    id: string;
+    label: string;
+    type: string;
+    category: string;
+    badge?: string;
+    details?: string;
+    color?: string;
+    commit_hash?: string;
+    full_hash?: string;
+    run_id?: string;
+    artifact_uri?: string;
+    created_at?: string;
+  }>;
+  edges: Array<{
+    id: string;
+    source: string;
+    target: string;
+    label?: string;
+  }>;
+  total_nodes: number;
+  total_edges: number;
+}
+
+export interface DeletionProtectionCheck {
+  version_hash: string;
+  can_delete: boolean;
+  deletion_blocked: boolean;
+  blocking_models_count: number;
+  reasons: string[];
+  blocking_models: RegisteredModel[];
+}
+

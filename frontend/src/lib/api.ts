@@ -552,6 +552,76 @@ export async function fetchDatasetBlame(datasetName: string, commitId?: string):
   return res.json();
 }
 
+// -------------------------------------------------------------
+// Lineage Ecosystem, Model Registry & Deletion Protection
+// -------------------------------------------------------------
+export async function fetchFullLineageGraph(): Promise<import("./types").LineageGraphResponse> {
+  const res = await fetch(`${API_BASE}/lineage/graph`);
+  if (!res.ok) throw new Error(`Failed to fetch lineage graph (${res.status})`);
+  return res.json();
+}
+
+export async function traceBackwardLineage(assetId: string): Promise<any> {
+  const res = await fetch(`${API_BASE}/lineage/trace/backward/${encodeURIComponent(assetId)}`);
+  if (!res.ok) throw new Error(`Failed to trace backward lineage (${res.status})`);
+  return res.json();
+}
+
+export async function traceForwardImpact(assetId: string): Promise<any> {
+  const res = await fetch(`${API_BASE}/lineage/trace/forward/${encodeURIComponent(assetId)}`);
+  if (!res.ok) throw new Error(`Failed to trace forward impact (${res.status})`);
+  return res.json();
+}
+
+export async function fetchRegisteredModels(datasetName?: string): Promise<import("./types").RegisteredModel[]> {
+  const url = datasetName
+    ? `${API_BASE}/lineage/models?dataset_name=${encodeURIComponent(datasetName)}`
+    : `${API_BASE}/lineage/models`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Failed to fetch registered models (${res.status})`);
+  return res.json();
+}
+
+export async function registerModel(req: {
+  name: string;
+  framework: string;
+  algorithm?: string;
+  version?: string;
+  dataset_name: string;
+  dataset_version_hash: string;
+  experiment_tracker?: string;
+  run_id?: string;
+  metrics?: Record<string, number>;
+  hyperparameters?: Record<string, any>;
+  status?: string;
+}): Promise<any> {
+  const res = await fetch(`${API_BASE}/lineage/models`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(req),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Failed to register model (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function checkDeletionProtection(versionHash: string): Promise<import("./types").DeletionProtectionCheck> {
+  const res = await fetch(`${API_BASE}/lineage/protection/check/${encodeURIComponent(versionHash)}`);
+  if (!res.ok) throw new Error(`Failed to check deletion protection (${res.status})`);
+  return res.json();
+}
+
+export async function exportOpenLineage(format: "openlineage" | "graphviz"): Promise<any> {
+  const res = await fetch(`${API_BASE}/lineage/export?format=${format}`);
+  if (!res.ok) throw new Error(`Failed to export lineage (${res.status})`);
+  if (format === "graphviz") {
+    return res.text();
+  }
+  return res.json();
+}
+
 export * from "./api/auth";
 
 

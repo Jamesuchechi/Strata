@@ -56,7 +56,7 @@ Every feature in the master blueprint belongs to exactly one phase below. New fe
 
 - [ ] **Isolated Compute Sandboxes:** 13.3, 7.4, 7.5, 7.6, 7.7, 7.8, 7.9 (Containerized Python runners for heavy ETL, scheduled pipelines, dead-letter queues)
 - [x] **Branching & Merging:** 2.5, 2.6, 2.13, 2.15, 2.16 (Git-style branching, visual merge conflict resolution, row/col blame)
-- [ ] **Full Lineage Ecosystem:** 6.2, 6.5, 6.6, 6.7, 6.8, 6.9 (Interactive DAG, model registration, OpenLineage export, deletion protection)
+- [x] **Full Lineage Ecosystem:** 6.2, 6.5, 6.6, 6.7, 6.8, 6.9 (Interactive DAG, model registration, OpenLineage export, deletion protection)
 - [ ] **Semantic Vector Search:** 10.2, 10.3, 10.4, 10.6, 10.7 (Embedding-based natural language search across datasets)
 - [ ] **Public Showcase & Sharing:** 11.2, 11.3, 11.4, 11.5, 11.6, 11.7 (Public dataset showcase, embed widgets, BibTeX citations, forking)
 - [ ] **Integrations:** 12.1, 12.2, 12.3, 12.4, 12.5, 12.6, 12.7, 12.8, 12.9, 12.10 (JupyterLab, VS Code, MLflow, W&B, dbt, Slack alerts)
