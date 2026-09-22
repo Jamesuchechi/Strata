@@ -19,7 +19,7 @@ interface SdkDocsModalProps {
   datasetId?: string;
 }
 
-export function SdkDocsModal({ isOpen, onClose, datasetName = "customer_churn.csv", datasetId = "churn_demo" }: SdkDocsModalProps) {
+export function SdkDocsModal({ isOpen, onClose, datasetName = "my_dataset.csv", datasetId = "dataset_id" }: SdkDocsModalProps) {
   const [activeTab, setActiveTab] = useState<"python" | "cli" | "sql">("python");
   const [copied, setCopied] = useState<string | null>(null);
 

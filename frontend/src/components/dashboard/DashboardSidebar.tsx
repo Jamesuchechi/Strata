@@ -45,7 +45,7 @@ export function DashboardSidebar({
   activeNav,
   onSelectNav,
   onSelectDataset,
-  activeDatasetId = "orders_q3",
+  activeDatasetId = "",
 }: DashboardSidebarProps) {
   const pathname = usePathname();
   const [datasetsExpanded, setDatasetsExpanded] = useState(true);

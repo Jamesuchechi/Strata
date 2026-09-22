@@ -129,56 +129,5 @@ async def upgrade_plan(req: UpgradePlanRequest):
 
 @router.post("/seed-samples")
 async def seed_domain_sample_datasets():
-    """Seed comprehensive domain datasets (Finance, Healthcare, E-Commerce, Bioinformatics, Geospatial)."""
-    storage_dir = get_storage_dir()
-    seeded = []
-
-    # 1. E-Commerce Customer Analytics CSV
-    ecom_path = os.path.join(storage_dir, "ecommerce_rfm_segments.csv")
-    if not os.path.exists(ecom_path):
-        ecom_df = pl.DataFrame({
-            "customer_id": [f"USR-{2000 + i}" for i in range(30)],
-            "frequency_purchases": [1, 5, 12, 3, 22, 8, 15, 2, 9, 31, 4, 18, 7, 11, 26, 6, 14, 2, 19, 28, 5, 8, 16, 3, 21, 10, 13, 1, 24, 17],
-            "monetary_value": [45.0, 280.5, 1420.0, 110.0, 3950.0, 680.0, 1890.0, 95.0, 820.0, 5100.0, 210.0, 2350.0, 590.0, 1180.0, 4200.0, 490.0, 1640.0, 85.0, 2600.0, 4800.0, 390.0, 720.0, 1950.0, 130.0, 3450.0, 940.0, 1320.0, 50.0, 3800.0, 2100.0],
-            "recency_days": [180, 25, 4, 90, 2, 14, 7, 120, 18, 1, 65, 5, 30, 12, 3, 40, 9, 150, 6, 2, 45, 20, 8, 110, 4, 16, 11, 200, 3, 7],
-            "rfm_segment": ["Lost", "Loyal", "Champions", "At Risk", "Champions", "Potential", "Champions", "Lost", "Loyal", "Champions", "At Risk", "Champions", "Potential", "Loyal", "Champions", "Potential", "Champions", "Lost", "Champions", "Champions", "Potential", "Loyal", "Champions", "At Risk", "Champions", "Loyal", "Loyal", "Lost", "Champions", "Champions"],
-            "lifetime_margin_pct": [0.18, 0.32, 0.45, 0.22, 0.51, 0.35, 0.42, 0.15, 0.38, 0.54, 0.25, 0.48, 0.30, 0.39, 0.52, 0.28, 0.44, 0.16, 0.49, 0.53, 0.29, 0.36, 0.46, 0.20, 0.50, 0.37, 0.40, 0.14, 0.51, 0.47]
-        })
-        ecom_df.write_csv(ecom_path)
-    
-    ecom_hash = hashlib.sha256(open(ecom_path, "rb").read()).hexdigest()
-    r1 = register_dataset_in_store(
-        file_path=ecom_path,
-        filename="ecommerce_rfm_segments.csv",
-        content_hash=ecom_hash,
-        description="Customer Recency, Frequency, and Monetary (RFM) segmentation benchmark for behavioral retention.",
-        tags=["csv", "ecommerce", "rfm", "marketing", "sample"],
-        custom_id="ecom_rfm_sample",
-    )
-    seeded.append(r1["name"])
-
-    # 2. Clinical Trial Biomarkers Parquet
-    bio_path = os.path.join(storage_dir, "clinical_biomarkers.parquet")
-    if not os.path.exists(bio_path):
-        bio_df = pl.DataFrame({
-            "subject_id": [f"SUBJ-{500 + i}" for i in range(25)],
-            "cohort": ["Control", "Treatment A", "Treatment B", "Treatment A", "Treatment B"] * 5,
-            "biomarker_alpha_pg_ml": [12.4, 45.8, 62.1, 48.2, 59.9, 14.1, 51.0, 68.4, 44.5, 63.2, 11.9, 49.3, 65.7, 46.8, 61.4, 13.5, 47.1, 64.0, 43.9, 66.8, 12.8, 52.4, 69.1, 45.0, 60.5],
-            "systolic_bp": [120, 118, 115, 122, 114, 121, 119, 116, 120, 113, 124, 117, 115, 121, 112, 119, 118, 114, 122, 115, 123, 116, 113, 120, 114],
-            "response_status": ["Non-Responder", "Partial", "Complete", "Partial", "Complete", "Non-Responder", "Complete", "Complete", "Partial", "Complete", "Non-Responder", "Partial", "Complete", "Partial", "Complete", "Non-Responder", "Partial", "Complete", "Partial", "Complete", "Non-Responder", "Complete", "Complete", "Partial", "Complete"],
-            "adverse_events_count": [0, 1, 0, 2, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1]
-        })
-        bio_df.write_parquet(bio_path)
-
-    bio_hash = hashlib.sha256(open(bio_path, "rb").read()).hexdigest()
-    r2 = register_dataset_in_store(
-        file_path=bio_path,
-        filename="clinical_biomarkers.parquet",
-        content_hash=bio_hash,
-        description="Phase II double-blind clinical biomarker cohort response and adverse event telemetry.",
-        tags=["parquet", "healthcare", "clinical", "biomarkers", "sample"],
-        custom_id="clinical_sample",
-    )
-    seeded.append(r2["name"])
-
-    return {"message": "Domain sample datasets initialized successfully", "seeded_datasets": seeded}
+    """No-op: Sample seeding is disabled in production."""
+    return {"message": "Sample datasets are disabled. Upload your datasets via /datasets/upload or connectors.", "seeded_datasets": []}

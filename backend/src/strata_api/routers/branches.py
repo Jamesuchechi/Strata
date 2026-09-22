@@ -41,8 +41,15 @@ class MergeBranchRequest(BaseModel):
 
 
 @router.get("")
-async def get_branches(dataset_name: str = Query("customer_churn.csv", description="Target dataset name")):
+async def get_branches(dataset_name: Optional[str] = Query(None, description="Target dataset name")):
     """List all branches for a dataset, indicating active branch and head commit info."""
+    if not dataset_name:
+        return {
+            "dataset_name": "",
+            "active_branch": "main",
+            "branches": [],
+            "total_branches": 0,
+        }
     try:
         branches = list_branches(dataset_name)
         active = get_active_branch(dataset_name)
@@ -85,7 +92,7 @@ async def checkout_active_branch(req: CheckoutBranchRequest):
 @router.delete("/{branch_name:path}")
 async def delete_existing_branch(
     branch_name: str,
-    dataset_name: str = Query("customer_churn.csv", description="Target dataset name"),
+    dataset_name: str = Query(..., description="Target dataset name"),
 ):
     """Delete a non-default branch."""
     try:
@@ -99,7 +106,7 @@ async def delete_existing_branch(
 async def compare_branches(
     target_branch: str = Query("main", description="Target branch (ours)"),
     source_branch: str = Query("staging", description="Source branch to merge in (theirs)"),
-    dataset_name: str = Query("customer_churn.csv", description="Dataset name"),
+    dataset_name: str = Query(..., description="Dataset name"),
 ):
     """Preview 3-way merge between target and source branches against their Lowest Common Ancestor (LCA).
     Detects clean auto-mergeable column additions as well as schema conflicts."""
@@ -134,10 +141,18 @@ async def merge_branches(req: MergeBranchRequest):
 
 @router.get("/blame")
 async def get_dataset_blame(
-    dataset_name: str = Query("customer_churn.csv", description="Dataset name"),
+    dataset_name: Optional[str] = Query(None, description="Dataset name"),
     commit_id: Optional[str] = Query(None, description="Optional target commit hash"),
 ):
     """Retrieve column-level and row-level attribution history (who introduced what, when, and in which commit)."""
+    if not dataset_name:
+        return {
+            "dataset_name": "",
+            "total_rows_analyzed": 0,
+            "total_columns_analyzed": 0,
+            "column_blame": [],
+            "row_sample_blame": [],
+        }
     try:
         blame_data = compute_blame(dataset_name, commit_id)
         return blame_data

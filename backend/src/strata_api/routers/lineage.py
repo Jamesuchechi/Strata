@@ -8,60 +8,7 @@ from fastapi import APIRouter, HTTPException, Query, Response
 router = APIRouter(prefix="/lineage", tags=["Lineage & Model Registry"])
 
 # Registered models database linking dataset version hashes to ML checkpoints / runs
-_models_db: List[Dict[str, Any]] = [
-    {
-        "id": "mod_lgbm_churn_v1",
-        "name": "Customer Churn Classifier",
-        "framework": "LightGBM",
-        "algorithm": "LGBMClassifier",
-        "version": "v1.0.0",
-        "dataset_name": "customer_churn.csv",
-        "dataset_version_hash": "0ff58aa",
-        "experiment_tracker": "MLflow",
-        "run_id": "mlflow-run-9481a8b2",
-        "metrics": {
-            "auc": 0.941,
-            "accuracy": 0.892,
-            "f1_score": 0.874,
-            "log_loss": 0.281,
-        },
-        "hyperparameters": {
-            "n_estimators": 150,
-            "learning_rate": 0.05,
-            "num_leaves": 31,
-            "subsample": 0.8,
-        },
-        "artifact_uri": "s3://strata-models/checkpoints/churn_lgbm_v1.bin",
-        "created_at": "2026-09-20T12:00:00Z",
-        "author": "Marcus Vance",
-        "status": "production",
-    },
-    {
-        "id": "mod_rf_biomarker_v2",
-        "name": "Clinical Cohort Drug Response",
-        "framework": "Scikit-Learn",
-        "algorithm": "RandomForestRegressor",
-        "version": "v2.1.0",
-        "dataset_name": "clinical_biomarkers.parquet",
-        "dataset_version_hash": "7f3b89a",
-        "experiment_tracker": "Weights & Biases",
-        "run_id": "wandb-run-clinical-alpha",
-        "metrics": {
-            "rmse": 4.12,
-            "r2_score": 0.884,
-            "mae": 2.91,
-        },
-        "hyperparameters": {
-            "n_estimators": 200,
-            "max_depth": 12,
-            "min_samples_split": 4,
-        },
-        "artifact_uri": "s3://strata-models/checkpoints/clinical_rf_v2.pkl",
-        "created_at": "2026-09-21T09:30:00Z",
-        "author": "Dr. Sarah Chen",
-        "status": "staging",
-    },
-]
+_models_db: List[Dict[str, Any]] = []
 
 
 class RegisterModelRequest(BaseModel):
@@ -76,7 +23,7 @@ class RegisterModelRequest(BaseModel):
     metrics: Dict[str, float] = Field(default_factory=dict)
     hyperparameters: Dict[str, Any] = Field(default_factory=dict)
     artifact_uri: Optional[str] = None
-    author: Optional[str] = "James Uchechi"
+    author: Optional[str] = "Owner"
     status: Optional[str] = "staging"
 
 
@@ -106,7 +53,7 @@ async def register_model(req: RegisterModelRequest):
         "hyperparameters": req.hyperparameters,
         "artifact_uri": req.artifact_uri or f"s3://strata-models/checkpoints/{model_id}.pkl",
         "created_at": datetime.now(timezone.utc).isoformat(),
-        "author": req.author or "James Uchechi",
+        "author": req.author or "Owner",
         "status": req.status or "staging",
     }
     _models_db.insert(0, record)
@@ -115,8 +62,8 @@ async def register_model(req: RegisterModelRequest):
 
 @router.get("/graph")
 async def get_full_lineage_graph():
-    """Build and return complete end-to-end provenance graph across all layers:
-    Raw Source Files -> Wrangling Recipes -> Cleaned Dataset Versions -> Feature Sets -> Trained Models -> Dashboards/Reports."""
+    """Build and return complete end-to-end provenance graph across all active layers:
+    Raw Source Files -> Ingested Datasets -> Version Snapshots -> Registered Models."""
     from strata_api.routers.datasets import _datasets_db
     from strata_api.versioning.registry import get_all_commits
 
@@ -124,7 +71,7 @@ async def get_full_lineage_graph():
     nodes = []
     edges = []
 
-    # 1. Ingestion Sources
+    # 1. Ingestion Sources & Datasets
     for d_id, d in _datasets_db.items():
         fname = d.get("filename", d_id)
         raw_id = f"raw_{d_id}"
@@ -158,7 +105,7 @@ async def get_full_lineage_graph():
             "label": "inferred_and_cataloged",
         })
 
-    # 2. Dataset Version Commits & Recipes
+    # 2. Dataset Version Commits
     for c in commits:
         c_id = f"commit_{c['id']}"
         nodes.append({
@@ -192,28 +139,7 @@ async def get_full_lineage_graph():
                     "label": "initial_commit",
                 })
 
-    # 3. Feature Engineering Sets
-    feature_nodes = [
-        {
-            "id": "feat_churn_rfm",
-            "label": "RFM & Behavioral Interaction Features",
-            "type": "feature_set",
-            "category": "Engineered Features",
-            "badge": "18 Features",
-            "details": "Quantile scaling, tenure log transform",
-            "color": "cyan",
-        }
-    ]
-    nodes.extend(feature_nodes)
-    if commits:
-        edges.append({
-            "id": "e_feat_1",
-            "source": f"commit_{commits[0]['id']}",
-            "target": "feat_churn_rfm",
-            "label": "feature_engineering",
-        })
-
-    # 4. Registered ML Models
+    # 3. Registered ML Models (if any exist)
     for m in _models_db:
         m_id = f"model_{m['id']}"
         metric_summary = ", ".join([f"{k.upper()}: {v}" for k, v in list(m.get("metrics", {}).items())[:2]])
@@ -223,13 +149,13 @@ async def get_full_lineage_graph():
             "type": "model",
             "category": "Registered Model",
             "badge": m.get("status", "staging").upper(),
-            "details": metric_summary or "AUC: 0.941",
+            "details": metric_summary or "Active Checkpoint",
             "color": "purple",
             "run_id": m.get("run_id"),
             "artifact_uri": m.get("artifact_uri"),
         })
 
-        # Link model to its feature set or commit hash
+        # Link model to its commit hash if matching
         matched_commit = next((c for c in commits if c.get("hash") == m.get("dataset_version_hash") or c.get("full_hash") == m.get("dataset_version_hash")), None)
         if matched_commit:
             edges.append({
@@ -238,30 +164,6 @@ async def get_full_lineage_graph():
                 "target": m_id,
                 "label": f"trained_on_{m.get('experiment_tracker')}",
             })
-        else:
-            edges.append({
-                "id": f"e_mod_{m['id']}",
-                "source": "feat_churn_rfm",
-                "target": m_id,
-                "label": f"trained_on_{m.get('experiment_tracker')}",
-            })
-
-    # 5. Executive Dashboards & Reports
-    nodes.append({
-        "id": "report_exec_churn",
-        "label": "Executive Churn & Risk Summary Dashboard",
-        "type": "dashboard",
-        "category": "Dashboard Report",
-        "badge": "Live Stream",
-        "details": "Automated weekly refresh for leadership",
-        "color": "amber",
-    })
-    edges.append({
-        "id": "e_rep_1",
-        "source": f"model_{_models_db[0]['id']}",
-        "target": "report_exec_churn",
-        "label": "generates_predictions",
-    })
 
     return {
         "nodes": nodes,

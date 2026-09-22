@@ -10,150 +10,34 @@ router = APIRouter(prefix="/workspaces", tags=["Collaboration"])
 
 # In-memory storage for workspaces, members, invitations, permission overrides, and activity logs
 _workspaces_db: Dict[str, Dict[str, Any]] = {
-    "ws_default": {
-        "id": "ws_default",
-        "name": "Acme Data Science Lab",
-        "slug": "acme-ds-lab",
-        "description": "Production workspace for enterprise customer churn models and financial analytics.",
+    "ws_primary": {
+        "id": "ws_primary",
+        "name": "My Workspace",
+        "slug": "my-workspace",
+        "description": "Primary workspace for dataset engineering and analytics.",
         "plan": "Pro Team",
-        "created_at": "2026-08-01T10:00:00Z",
-        "owner_id": "user_james",
-    },
-    "ws_sandbox": {
-        "id": "ws_sandbox",
-        "name": "Personal Sandbox",
-        "slug": "personal-sandbox",
-        "description": "Private staging environment for ad-hoc exploration and AutoML benchmarking.",
-        "plan": "Community Free",
-        "created_at": "2026-08-15T14:30:00Z",
-        "owner_id": "user_james",
+        "created_at": "2026-09-01T10:00:00Z",
+        "owner_id": "user_owner",
     },
 }
 
 _members_db: Dict[str, List[Dict[str, Any]]] = {
-    "ws_default": [
+    "ws_primary": [
         {
             "id": "mem_1",
-            "user_id": "user_james",
-            "name": "James Uchechi",
-            "email": "james@company.com",
+            "user_id": "user_owner",
+            "name": "Workspace Owner",
+            "email": "owner@strata.ai",
             "role": "Owner",
-            "joined_at": "2026-08-01T10:00:00Z",
-            "avatar": "JU",
-        },
-        {
-            "id": "mem_2",
-            "user_id": "user_sarah",
-            "name": "Dr. Sarah Chen",
-            "email": "sarah.chen@company.com",
-            "role": "Admin",
-            "joined_at": "2026-08-05T11:20:00Z",
-            "avatar": "SC",
-        },
-        {
-            "id": "mem_3",
-            "user_id": "user_marcus",
-            "name": "Marcus Vance",
-            "email": "m.vance@company.com",
-            "role": "Editor",
-            "joined_at": "2026-08-12T09:15:00Z",
-            "avatar": "MV",
-        },
-        {
-            "id": "mem_4",
-            "user_id": "user_elena",
-            "name": "Elena Rostova",
-            "email": "elena.r@company.com",
-            "role": "Analyst",
-            "joined_at": "2026-08-20T16:45:00Z",
-            "avatar": "ER",
-        },
-        {
-            "id": "mem_5",
-            "user_id": "user_alex",
-            "name": "Alex Mercer",
-            "email": "alex.m@partner.org",
-            "role": "Viewer",
-            "joined_at": "2026-09-01T13:10:00Z",
-            "avatar": "AM",
-        },
-    ],
-    "ws_sandbox": [
-        {
-            "id": "mem_s1",
-            "user_id": "user_james",
-            "name": "James Uchechi",
-            "email": "james@company.com",
-            "role": "Owner",
-            "joined_at": "2026-08-15T14:30:00Z",
-            "avatar": "JU",
+            "joined_at": "2026-09-01T10:00:00Z",
+            "avatar": "WO",
         },
     ],
 }
 
-_invitations_db: Dict[str, List[Dict[str, Any]]] = {
-    "ws_default": [
-        {
-            "id": "inv_1",
-            "email": "r.feynman@institute.edu",
-            "role": "Analyst",
-            "invite_token": "inv_sec_89234f9a",
-            "created_at": "2026-09-20T09:30:00Z",
-            "status": "pending",
-        }
-    ]
-}
-
-_dataset_permissions_db: Dict[str, Dict[str, str]] = {
-    "ws_default": {
-        "churn_demo": "Editor",
-        "finance_demo": "Admin",
-        "genomic_demo": "Viewer",
-    }
-}
-
-_activity_feed_db: List[Dict[str, Any]] = [
-    {
-        "id": "act_1",
-        "workspace_id": "ws_default",
-        "dataset_name": "customer_churn.csv",
-        "actor_name": "James Uchechi",
-        "action": "commit",
-        "details": "Committed version v1.2.0: Cleaned outliers & imputed missing tenure",
-        "timestamp": "10 minutes ago",
-        "badge_color": "emerald",
-    },
-    {
-        "id": "act_2",
-        "workspace_id": "ws_default",
-        "dataset_name": "financial_projections.xlsx",
-        "actor_name": "Dr. Sarah Chen",
-        "action": "tag",
-        "details": "Tagged version hash 7f3b89a as 'prod-release'",
-        "timestamp": "45 minutes ago",
-        "badge_color": "blue",
-    },
-    {
-        "id": "act_3",
-        "workspace_id": "ws_default",
-        "dataset_name": "customer_churn.csv",
-        "actor_name": "Marcus Vance",
-        "action": "automl",
-        "details": "Trained LightGBM Classifier (AUC: 0.941) with SHAP explanations",
-        "timestamp": "2 hours ago",
-        "badge_color": "purple",
-    },
-    {
-        "id": "act_4",
-        "workspace_id": "ws_default",
-        "dataset_name": "genomic_variants.parquet",
-        "actor_name": "Elena Rostova",
-        "action": "ingest",
-        "details": "Ingested 20,400 variant loci with clinical significance annotations",
-        "timestamp": "1 day ago",
-        "badge_color": "amber",
-    },
-]
+_invitations_db: Dict[str, List[Dict[str, Any]]] = {}
+_dataset_permissions_db: Dict[str, Dict[str, str]] = {}
+_activity_feed_db: List[Dict[str, Any]] = []
 
 
 def log_activity(
@@ -317,36 +201,8 @@ async def set_dataset_permission(workspace_id: str, req: UpdateDatasetPermission
 # Advanced Collaboration: Cell/Row Comments & Review Approvals (Pillars 9.6, 9.7, 9.10)
 # ---------------------------------------------------------------------------
 
-_dataset_comments_db: Dict[str, List[Dict[str, Any]]] = {
-    "churn_demo": [
-        {
-            "id": "comment_1",
-            "dataset_id": "churn_demo",
-            "row_index": 3,
-            "column_name": "churn_probability",
-            "author_name": "Dr. Sarah Chen",
-            "author_role": "Admin",
-            "comment": "Unusual spike in churn probability (0.65) for an 8-month customer with high monthly charges. Validate attribution.",
-            "resolved": False,
-            "created_at": "2026-09-20T14:10:00Z",
-        }
-    ]
-}
-
-_review_requests_db: List[Dict[str, Any]] = [
-    {
-        "id": "rev_1",
-        "dataset_name": "customer_churn.csv",
-        "source_branch": "feature/clean-outliers",
-        "target_branch": "main",
-        "title": "Merge Outlier Clipping and Retention Ratios into Production",
-        "author": "Marcus Vance",
-        "status": "pending_review",  # pending_review, approved, changes_requested, merged
-        "approvals": ["Dr. Sarah Chen"],
-        "min_approvals_required": 1,
-        "created_at": "2026-09-21T10:00:00Z",
-    }
-]
+_dataset_comments_db: Dict[str, List[Dict[str, Any]]] = {}
+_review_requests_db: List[Dict[str, Any]] = []
 
 
 class DatasetCommentRequest(BaseModel):

@@ -53,12 +53,6 @@ def _log_audit_event(actor: str, action: str, target: str, ip_address: str = "12
     return event
 
 
-# Pre-seed sample audit events
-_log_audit_event("james@company.com", "dataset.download", "customer_churn.csv", "192.168.1.42")
-_log_audit_event("sarah.chen@company.com", "pipeline.execute", "pipe_churn_etl", "10.0.4.15")
-_log_audit_event("james@company.com", "branch.merge", "feature/retention-v2 -> main", "192.168.1.42")
-
-
 # ---------------------------------------------------------------------------
 # Models
 # ---------------------------------------------------------------------------

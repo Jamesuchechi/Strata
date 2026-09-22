@@ -119,7 +119,11 @@ export default function VersionsPage() {
   const [isLoadingBlame, setIsLoadingBlame] = useState(false);
 
   const loadBranches = async (dsName?: string) => {
-    const target = dsName || newCommitDataset || "customer_churn.csv";
+    const target = dsName || newCommitDataset || (datasets.length > 0 ? datasets[0].filename : "");
+    if (!target) {
+      setBranches([]);
+      return;
+    }
     try {
       const res = await fetchBranches(target);
       setBranches(res.branches || []);
@@ -133,9 +137,13 @@ export default function VersionsPage() {
   };
 
   const loadBlame = async (dsName?: string) => {
+    const target = dsName || newCommitDataset || (datasets.length > 0 ? datasets[0].filename : "");
+    if (!target) {
+      setBlameData(null);
+      return;
+    }
     setIsLoadingBlame(true);
     try {
-      const target = dsName || newCommitDataset || "customer_churn.csv";
       const res = await fetchDatasetBlame(target);
       setBlameData(res);
     } catch (e: any) {
@@ -153,7 +161,7 @@ export default function VersionsPage() {
         fetchDatasets(),
       ]);
       setDatasets(datasetList);
-      const ds = datasetList.length > 0 ? datasetList[0].filename : "customer_churn.csv";
+      const ds = datasetList.length > 0 ? datasetList[0].filename : "";
       setNewCommitDataset(ds);
       setCommits(commitList);
       if (commitList.length > 0) {
@@ -164,7 +172,9 @@ export default function VersionsPage() {
         setCompareBaseId(commitList[commitList.length - 1].id);
         setCompareTargetId(commitList[0].id);
       }
-      await loadBranches(ds);
+      if (ds) {
+        await loadBranches(ds);
+      }
     } catch (err) {
       console.error("Failed to load commits:", err);
     } finally {
@@ -359,7 +369,8 @@ export default function VersionsPage() {
 
   const handleCheckoutBranch = async (branchName: string) => {
     try {
-      const target = newCommitDataset || "customer_churn.csv";
+      const target = newCommitDataset || (datasets.length > 0 ? datasets[0].filename : "");
+      if (!target) return;
       await checkoutBranch(target, branchName);
       setActiveBranch(branchName);
       setShowBranchDropdown(false);
@@ -374,7 +385,8 @@ export default function VersionsPage() {
     if (!newBranchName.trim()) return;
     setIsCreatingBranch(true);
     try {
-      const target = newCommitDataset || "customer_churn.csv";
+      const target = newCommitDataset || (datasets.length > 0 ? datasets[0].filename : "");
+      if (!target) return;
       await createBranch({
         dataset_name: target,
         branch_name: newBranchName.trim(),
@@ -395,7 +407,8 @@ export default function VersionsPage() {
   const handleDeleteBranch = async (branchName: string) => {
     if (!confirm(`Delete branch '${branchName}'? This action cannot be undone.`)) return;
     try {
-      const target = newCommitDataset || "customer_churn.csv";
+      const target = newCommitDataset || (datasets.length > 0 ? datasets[0].filename : "");
+      if (!target) return;
       await deleteBranch(target, branchName);
       await loadBranches(target);
     } catch (err: any) {
@@ -407,7 +420,8 @@ export default function VersionsPage() {
     if (!mergeTargetBranch || !mergeSourceBranch) return;
     setIsComparingMerge(true);
     try {
-      const target = newCommitDataset || "customer_churn.csv";
+      const target = newCommitDataset || (datasets.length > 0 ? datasets[0].filename : "");
+      if (!target) return;
       const res = await compareBranches(target, mergeTargetBranch, mergeSourceBranch);
       setMergeComparison(res);
     } catch (err: any) {
@@ -421,7 +435,8 @@ export default function VersionsPage() {
     if (!mergeTargetBranch || !mergeSourceBranch) return;
     setIsExecutingMerge(true);
     try {
-      const target = newCommitDataset || "customer_churn.csv";
+      const target = newCommitDataset || (datasets.length > 0 ? datasets[0].filename : "");
+      if (!target) return;
       const res = await mergeBranches({
         dataset_name: target,
         target_branch: mergeTargetBranch,

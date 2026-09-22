@@ -48,6 +48,7 @@ import {
   fetchPlatformHealth,
   fetchRateLimits,
   fetchWorkerQueues,
+  fetchDatasets,
 } from "@/lib/api";
 import {
   PipelineItem,
@@ -57,6 +58,7 @@ import {
   AuditLogItem,
   AdminOverview,
   PlatformHealth,
+  DatasetItem,
 } from "@/lib/types";
 
 export default function PipelinesAndPlatformPage() {
@@ -64,6 +66,7 @@ export default function PipelinesAndPlatformPage() {
 
   // Pipeline State
   const [pipelines, setPipelines] = useState<PipelineItem[]>([]);
+  const [datasets, setDatasets] = useState<DatasetItem[]>([]);
   const [runs, setRuns] = useState<PipelineRun[]>([]);
   const [dlq, setDlq] = useState<DeadLetterItem[]>([]);
   const [selectedRun, setSelectedRun] = useState<PipelineRun | null>(null);
@@ -113,10 +116,14 @@ export default function PipelinesAndPlatformPage() {
       const dlqData = await fetchDeadLetterQueue();
       setDlq(dlqData.dlq || []);
 
+      const dsList = await fetchDatasets();
+      setDatasets(dsList || []);
+      const primaryDs = dsList && dsList.length > 0 ? dsList[0].filename : "my_dataset.csv";
+
       const intData = await fetchIntegrationsStatus();
       setIntegrations(intData);
 
-      const codes = await fetchIntegrationCodeTemplates("customer_churn.csv", "v1.2.0");
+      const codes = await fetchIntegrationCodeTemplates(primaryDs, "main");
       setCodeTemplates(codes.templates || {});
 
       const audit = await fetchAuditLogs();
@@ -187,8 +194,13 @@ export default function PipelinesAndPlatformPage() {
   };
 
   const handleMaskTest = async () => {
+    const targetId = datasets.length > 0 ? datasets[0].id : "";
+    if (!targetId) {
+      alert("No active datasets uploaded yet. Please upload a dataset before testing PII masking.");
+      return;
+    }
     try {
-      const res = await maskDatasetExport("churn_demo", ["email", "name"]);
+      const res = await maskDatasetExport(targetId, ["email", "name"]);
       setMaskSuccess(res);
     } catch (err: any) {
       alert(`PII Masking failed: ${err.message}`);
@@ -196,11 +208,16 @@ export default function PipelinesAndPlatformPage() {
   };
 
   const handleGdprRedact = async () => {
+    const targetIds = datasets.length > 0 ? [datasets[0].id] : [];
+    if (targetIds.length === 0) {
+      alert("No active datasets available to execute GDPR redaction on.");
+      return;
+    }
     if (!confirm(`Are you sure you want to execute GDPR Article 17 cascading erasure for customer ID '${gdprCustomerId}'?`)) {
       return;
     }
     try {
-      const res = await gdprRedactCustomer(gdprCustomerId, ["churn_demo"]);
+      const res = await gdprRedactCustomer(gdprCustomerId, targetIds);
       setGdprResult(res);
       alert(`GDPR right-to-be-forgotten executed: ${res.total_records_purged} records purged cascadingly.`);
     } catch (err: any) {

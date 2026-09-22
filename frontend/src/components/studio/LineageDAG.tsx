@@ -156,12 +156,13 @@ export function LineageDAG() {
     if (!newModelName.trim()) return;
     setIsRegistering(true);
     try {
-      const targetHash = selectedNode?.commit_hash || selectedNode?.badge || "0ff58aa";
+      const targetHash = selectedNode?.commit_hash || selectedNode?.badge || "v1.0.0";
+      const dsName = selectedNode?.label?.replace("Source: ", "") || (selectedNode as any)?.dataset_name || "dataset";
       await registerModel({
         name: newModelName.trim(),
         framework: newModelFramework,
         algorithm: newModelAlgorithm,
-        dataset_name: "customer_churn.csv",
+        dataset_name: dsName,
         dataset_version_hash: targetHash,
         experiment_tracker: "MLflow",
         run_id: newModelRunId.trim() || `run-${Date.now().toString(36)}`,

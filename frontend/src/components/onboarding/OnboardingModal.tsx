@@ -13,7 +13,6 @@ import {
   Layers,
   X,
 } from "lucide-react";
-import { seedDomainSamples } from "@/lib/api";
 
 interface OnboardingModalProps {
   isOpen: boolean;
@@ -23,22 +22,8 @@ interface OnboardingModalProps {
 
 export function OnboardingModal({ isOpen, onClose, onFinished }: OnboardingModalProps) {
   const [step, setStep] = useState(1);
-  const [isSeeding, setIsSeeding] = useState(false);
-  const [seeded, setSeeded] = useState(false);
 
   if (!isOpen) return null;
-
-  const handleSeed = async () => {
-    setIsSeeding(true);
-    try {
-      await seedDomainSamples();
-      setSeeded(true);
-    } catch (err: any) {
-      alert(`Failed to seed samples: ${err.message}`);
-    } finally {
-      setIsSeeding(false);
-    }
-  };
 
   const steps = [
     {
@@ -60,37 +45,25 @@ export function OnboardingModal({ isOpen, onClose, onFinished }: OnboardingModal
       ),
     },
     {
-      title: "Explore Pre-loaded Domain Benchmarks",
+      title: "Connect & Upload Your Datasets",
       badge: "Step 2 of 4",
-      description: "Jumpstart your exploration with realistic domain datasets across SaaS Churn, Financial ARR Projections, Genomic Variant Sequencing, and Clinical Biomarkers.",
+      description: "Ingest datasets directly into your lakehouse from Kaggle, local CSV, Parquet, multi-sheet Excel, JSON, or external databases.",
       icon: <Database className="w-8 h-8 text-emerald-600" />,
       content: (
         <div className="space-y-3 pt-2">
           <div className="p-4 rounded-xl bg-[#FAF8F5] border border-[#E8E4DF] flex items-center justify-between">
             <div>
-              <div className="font-bold text-xs text-[#1E1915]">Pre-loaded Domain Templates</div>
-              <div className="text-[11px] text-[#736B63]">Customer Churn, Financial Excel, Genomic Variants, Clinical Trials</div>
+              <div className="font-bold text-xs text-[#1E1915]">Ingest New Dataset</div>
+              <div className="text-[11px] text-[#736B63]">Import CSV, Excel, Parquet, JSON, or SDF files with sub-second parsing</div>
             </div>
-            <button
-              onClick={handleSeed}
-              disabled={isSeeding || seeded}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-all ${
-                seeded
-                  ? "bg-emerald-600 text-white"
-                  : "bg-[#0061FE] hover:bg-[#0052D4] text-white shadow-sm"
-              }`}
+            <a
+              href="/upload"
+              onClick={onClose}
+              className="px-3.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 cursor-pointer bg-[#0061FE] hover:bg-[#0052D4] text-white shadow-sm transition-all"
             >
-              {seeded ? (
-                <>
-                  <Check className="w-3.5 h-3.5" />
-                  <span>Datasets Loaded!</span>
-                </>
-              ) : isSeeding ? (
-                <span>Loading...</span>
-              ) : (
-                <span>Load Domain Samples</span>
-              )}
-            </button>
+              <span>Go to Upload</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </a>
           </div>
         </div>
       ),
@@ -125,7 +98,7 @@ export function OnboardingModal({ isOpen, onClose, onFinished }: OnboardingModal
             <span>You're Ready to Build!</span>
           </div>
           <p className="text-[11px] text-emerald-800">
-            Head to the Datasets tab to explore seeded tables, or upload your own CSV, Excel, or Parquet file.
+            Head to the Upload tab to import your CSV, Excel, or Parquet datasets and start querying.
           </p>
         </div>
       ),

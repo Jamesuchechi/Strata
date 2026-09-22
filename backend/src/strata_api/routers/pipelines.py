@@ -21,57 +21,30 @@ _pipelines_db: Dict[str, Dict[str, Any]] = {}
 _pipeline_runs: Dict[str, Dict[str, Any]] = {}
 _dead_letter_queue: List[Dict[str, Any]] = []
 
-# Pre-seeded Reusable Pipeline Templates (7.8)
+# Reusable Pipeline Templates (7.8)
 PIPELINE_TEMPLATES = [
     {
-        "id": "tpl_churn_features",
-        "name": "Customer Churn Feature Engineering & Scaling",
-        "description": "Calculates customer lifetime value, tenure bins, clips outliers on charges, and one-hot encodes country.",
-        "target_dataset": "customer_churn.csv",
+        "id": "tpl_feature_engineering",
+        "name": "Feature Engineering & Outlier Clipping",
+        "description": "Calculates normalized interaction features, clips 99th percentile outliers, and standardizes numerical columns.",
+        "target_dataset": "",
         "steps": [
-            {"step_id": "clip_outliers", "operation": "quantile_clip", "columns": ["monthly_charges", "total_spend"], "params": {"lower_quantile": 0.01, "upper_quantile": 0.99}},
-            {"step_id": "add_tenure_ratio", "operation": "expression", "expression": "monthly_charges / (tenure_months + 1)", "output_column": "monthly_tenure_intensity"},
-            {"step_id": "impute_nulls", "operation": "impute_mean", "columns": ["total_spend"]},
+            {"step_id": "clip_outliers", "operation": "quantile_clip", "columns": ["value", "amount"], "params": {"lower_quantile": 0.01, "upper_quantile": 0.99}},
+            {"step_id": "impute_nulls", "operation": "impute_mean", "columns": ["amount"]},
         ],
         "schedule": "0 2 * * *",
     },
     {
-        "id": "tpl_fin_reconciliation",
-        "name": "Financial Monthly Run-Rate & EBITDA Normalization",
-        "description": "Calculates EBITDA margin drift, YoY growth rates, and validates revenue balance invariants.",
-        "target_dataset": "financial_projections.xlsx",
+        "id": "tpl_data_cleaning",
+        "name": "Validation & Positive Value Filter",
+        "description": "Filters out invalid negative records and calculates baseline ratio indicators.",
+        "target_dataset": "",
         "steps": [
-            {"step_id": "filter_positive", "operation": "filter", "condition": "Gross_Revenue > 0"},
-            {"step_id": "compute_ebitda", "operation": "expression", "expression": "Net_Operating_Income / Gross_Revenue", "output_column": "Normalized_EBITDA_Margin"},
+            {"step_id": "filter_positive", "operation": "filter", "condition": "amount > 0"},
         ],
         "schedule": "0 0 1 * *",
     },
 ]
-
-
-# Initialize default pipeline if empty
-def _init_default_pipelines():
-    if not _pipelines_db:
-        pipe_id = "pipe_churn_etl"
-        _pipelines_db[pipe_id] = {
-            "id": pipe_id,
-            "name": "Daily Churn Telemetry & Feature Pipeline",
-            "description": "Production nightly ETL: clips billing outliers, standardizes customer IDs, and generates retention features.",
-            "target_dataset_id": "churn_demo",
-            "schedule": "0 2 * * *",  # 2 AM daily
-            "trigger": "cron",
-            "is_active": True,
-            "timeout_seconds": 60,
-            "max_memory_mb": 512,
-            "steps": [
-                {"step_id": "step_1", "name": "Filter Invalid Churn Records", "type": "filter", "condition": "monthly_charges > 0"},
-                {"step_id": "step_2", "name": "Compute Spend Intensity", "type": "expression", "expr": "total_spend / (tenure_months + 1)", "output_col": "spend_per_month"},
-                {"step_id": "step_3", "name": "Flag High Risk Cohorts", "type": "conditional", "expr": "churn_probability > 0.7", "output_col": "high_risk_flag"},
-            ],
-            "created_at": "2026-09-01T00:00:00Z",
-            "last_run_at": "2026-09-22T02:00:15Z",
-            "last_status": "success",
-        }
 
 
 # ---------------------------------------------------------------------------
@@ -113,7 +86,6 @@ def _execute_pipeline_in_sandbox(pipe: Dict[str, Any], dry_run: bool = False, li
     """Execute pipeline in memory-safe execution sandbox."""
     import polars as pl
 
-    seed_default_datasets_if_needed()
     target_id = pipe.get("target_dataset_id")
     dataset = _datasets_db.get(target_id)
     if not dataset:
@@ -230,7 +202,6 @@ def _execute_pipeline_in_sandbox(pipe: Dict[str, Any], dry_run: bool = False, li
 @router.get("")
 async def list_pipelines():
     """List all registered ETL pipelines (Pillar 7.5)."""
-    _init_default_pipelines()
     return {"pipelines": list(_pipelines_db.values()), "total": len(_pipelines_db)}
 
 
@@ -243,7 +214,6 @@ async def get_pipeline_templates():
 @router.post("")
 async def create_pipeline(req: PipelineCreateRequest):
     """Register a new scheduled or event-driven pipeline (Pillars 7.2, 7.4)."""
-    _init_default_pipelines()
     pipe_id = f"pipe_{uuid.uuid4().hex[:8]}"
     pipeline_obj = {
         "id": pipe_id,
@@ -282,7 +252,6 @@ async def pipeline_dry_run(req: DryRunRequest):
 @router.post("/{pipeline_id}/run")
 async def run_pipeline(pipeline_id: str):
     """Execute pipeline in ephemeral isolated compute sandbox (Pillars 13.3, 7.6)."""
-    _init_default_pipelines()
     pipe = _pipelines_db.get(pipeline_id)
     if not pipe:
         raise HTTPException(status_code=404, detail="Pipeline not found")

@@ -29,16 +29,7 @@ _webhook_configs: Dict[str, Dict[str, Any]] = {
     },
 }
 
-_integration_events: List[Dict[str, Any]] = [
-    {
-        "id": "evt_1",
-        "service": "slack",
-        "event_type": "model_promoted",
-        "payload": {"model": "churn_lightgbm_v2", "metric": "AUC 0.942", "dataset_version": "v1.2.0"},
-        "status": "delivered",
-        "timestamp": "2026-09-22T08:30:00Z",
-    }
-]
+_integration_events: List[Dict[str, Any]] = []
 
 
 # ---------------------------------------------------------------------------
@@ -121,7 +112,7 @@ import strata
 import polars as pl
 
 # Connect to Strata local or remote studio
-client = strata.Client(workspace="Acme Data Science Lab")
+client = strata.Client(workspace="My Workspace")
 
 # Load snapshot directly into Polars or Pandas
 df = client.datasets.load("{dataset_name}", version="{version}")
@@ -167,7 +158,7 @@ class WebhookTestRequest(BaseModel):
     service: str = Field("slack", description="slack, discord, or teams")
     webhook_url: Optional[str] = "https://hooks.slack.com/services/test"
     event_type: str = "pipeline_alert"
-    message: str = "Strata Automated Alert: Pipeline 'pipe_churn_etl' completed with 0 errors."
+    message: str = "Strata Automated Alert: Pipeline run completed with 0 errors."
 
 
 class MLflowSyncRequest(BaseModel):
@@ -204,8 +195,8 @@ async def get_integrations_status():
 
 @router.get("/code-templates")
 async def get_code_templates(
-    dataset_name: str = "customer_churn.csv",
-    version: str = "v1.2.0",
+    dataset_name: str = "my_dataset.csv",
+    version: str = "main",
 ):
     """Generate production integration boilerplate for Airflow, Prefect, dbt, Jupyter, and MLflow (Pillar 12.1, 12.5, 12.6, 12.7)."""
     templates = _generate_integration_code(dataset_name, version)

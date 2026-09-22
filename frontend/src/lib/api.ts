@@ -839,7 +839,7 @@ export async function fetchIntegrationsStatus(): Promise<import("./types").Integ
 }
 
 export async function fetchIntegrationCodeTemplates(datasetName?: string, version?: string): Promise<{ dataset_name: string; version: string; templates: Record<string, string> }> {
-  const url = `${API_BASE}/integrations/code-templates?dataset_name=${encodeURIComponent(datasetName || "customer_churn.csv")}&version=${encodeURIComponent(version || "v1.2.0")}`;
+  const url = `${API_BASE}/integrations/code-templates?dataset_name=${encodeURIComponent(datasetName || "my_dataset.csv")}&version=${encodeURIComponent(version || "main")}`;
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Failed to fetch integration code templates (${res.status})`);
   return res.json();

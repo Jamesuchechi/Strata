@@ -41,7 +41,7 @@ import {
 
 export default function WorkspacePage() {
   const [workspaces, setWorkspaces] = useState<WorkspaceItem[]>([]);
-  const [activeWorkspaceId, setActiveWorkspaceId] = useState<string>("ws_default");
+  const [activeWorkspaceId, setActiveWorkspaceId] = useState<string>("ws_primary");
   const [members, setMembers] = useState<WorkspaceMember[]>([]);
   const [invites, setInvites] = useState<WorkspaceInvite[]>([]);
   const [activity, setActivity] = useState<ActivityFeedItem[]>([]);
