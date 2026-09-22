@@ -266,3 +266,81 @@ export interface BillingUsageResponse {
   }[];
 }
 
+export interface BranchRecord {
+  name: string;
+  dataset_name: string;
+  head_commit_id: string;
+  head_hash: string;
+  is_default: boolean;
+  is_active: boolean;
+  protected: boolean;
+  created_at: string;
+  created_by: string;
+  description?: string;
+  ahead_count?: number;
+  behind_count?: number;
+  head_commit_message?: string;
+  head_commit_author?: string;
+  head_commit_date?: string;
+  head_commit_tag?: string;
+}
+
+export interface ThreeWayMergeComparison {
+  status: string;
+  has_conflicts: boolean;
+  conflict_count: number;
+  conflicts: Array<{
+    type: string;
+    column: string;
+    message: string;
+    ours_value?: string;
+    theirs_value?: string;
+  }>;
+  schema_merge: Record<string, {
+    action: string;
+    status: string;
+    source?: string;
+    dtype?: string;
+    ours_dtype?: string;
+    theirs_dtype?: string;
+  }>;
+  base_commit: any;
+  target_commit: any;
+  source_commit: any;
+  target_branch: string;
+  source_branch: string;
+}
+
+export interface ColumnBlameRecord {
+  column: string;
+  introduced_commit_id: string;
+  introduced_hash: string;
+  introduced_version: string;
+  introduced_author: string;
+  introduced_date: string;
+  introduced_message: string;
+  mutation_count: number;
+  history: Array<{
+    commit_id: string;
+    hash: string;
+    author: string;
+    date: string;
+    message: string;
+  }>;
+}
+
+export interface DatasetBlameResponse {
+  dataset_name: string;
+  total_columns: number;
+  columns: ColumnBlameRecord[];
+  sample_rows_blame: Array<{
+    row_index: number;
+    data: Record<string, any>;
+    blame_commit_id: string;
+    blame_hash: string;
+    blame_author: string;
+    blame_message: string;
+    blame_date: string;
+  }>;
+}
+

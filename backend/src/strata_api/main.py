@@ -14,6 +14,7 @@ from strata_api.routers import (
     automl_router,
     collaboration_router,
     billing_router,
+    branches_router,
 )
 
 
@@ -56,6 +57,7 @@ def create_app() -> FastAPI:
     app.include_router(automl_router, prefix=settings.API_V1_PREFIX)
     app.include_router(collaboration_router, prefix=settings.API_V1_PREFIX)
     app.include_router(billing_router, prefix=settings.API_V1_PREFIX)
+    app.include_router(branches_router, prefix=settings.API_V1_PREFIX)
 
     from strata_api.routers.datasets import get_shared_dataset
     app.add_api_route(

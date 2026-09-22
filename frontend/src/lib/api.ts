@@ -451,6 +451,107 @@ export async function seedDomainSamples(): Promise<any> {
   return res.json();
 }
 
+// -------------------------------------------------------------
+// Git-Style Branching, 3-Way Merge & Blame Methods
+// -------------------------------------------------------------
+export async function fetchBranches(datasetName: string): Promise<{
+  dataset_name: string;
+  active_branch: string;
+  branches: import("./types").BranchRecord[];
+  total_branches: number;
+}> {
+  const res = await fetch(`${API_BASE}/branches?dataset_name=${encodeURIComponent(datasetName)}`);
+  if (!res.ok) throw new Error(`Failed to fetch branches (${res.status})`);
+  return res.json();
+}
+
+export async function createBranch(req: {
+  dataset_name: string;
+  branch_name: string;
+  from_commit_or_branch?: string;
+  description?: string;
+  author?: string;
+}): Promise<any> {
+  const res = await fetch(`${API_BASE}/branches`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(req),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Failed to create branch (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function checkoutBranch(datasetName: string, branchName: string): Promise<any> {
+  const res = await fetch(`${API_BASE}/branches/checkout`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ dataset_name: datasetName, branch_name: branchName }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Failed to checkout branch (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function deleteBranch(datasetName: string, branchName: string): Promise<any> {
+  const res = await fetch(`${API_BASE}/branches/${encodeURIComponent(branchName)}?dataset_name=${encodeURIComponent(datasetName)}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Failed to delete branch (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function compareBranches(
+  datasetName: string,
+  targetBranch: string,
+  sourceBranch: string,
+): Promise<import("./types").ThreeWayMergeComparison> {
+  const url = `${API_BASE}/branches/compare?dataset_name=${encodeURIComponent(datasetName)}&target_branch=${encodeURIComponent(targetBranch)}&source_branch=${encodeURIComponent(sourceBranch)}`;
+  const res = await fetch(url);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Branch comparison failed (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function mergeBranches(req: {
+  dataset_name: string;
+  target_branch: string;
+  source_branch: string;
+  strategy?: string;
+  resolutions?: Record<string, string>;
+  message?: string;
+  author?: string;
+}): Promise<any> {
+  const res = await fetch(`${API_BASE}/branches/merge`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(req),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Merge failed (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function fetchDatasetBlame(datasetName: string, commitId?: string): Promise<import("./types").DatasetBlameResponse> {
+  const url = new URL(`${API_BASE}/branches/blame`);
+  url.searchParams.append("dataset_name", datasetName);
+  if (commitId) url.searchParams.append("commit_id", commitId);
+  const res = await fetch(url.toString());
+  if (!res.ok) throw new Error(`Failed to fetch blame data (${res.status})`);
+  return res.json();
+}
+
 export * from "./api/auth";
 
 

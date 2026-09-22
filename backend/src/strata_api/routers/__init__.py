@@ -10,6 +10,7 @@ from strata_api.routers.eda import router as eda_router
 from strata_api.routers.automl import router as automl_router
 from strata_api.routers.collaboration import router as collaboration_router
 from strata_api.routers.billing import router as billing_router
+from strata_api.routers.branches import router as branches_router
 
 __all__ = [
     "health_router",
@@ -22,4 +23,5 @@ __all__ = [
     "automl_router",
     "collaboration_router",
     "billing_router",
+    "branches_router",
 ]

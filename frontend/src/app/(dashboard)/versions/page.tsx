@@ -28,6 +28,13 @@ import {
   ExternalLink,
   ChevronDown,
   X,
+  GitMerge,
+  Split,
+  Search,
+  Trash2,
+  Users,
+  Code2,
+  CheckSquare,
 } from "lucide-react";
 import {
   fetchCommits,
@@ -42,9 +49,23 @@ import {
   bumpCommitSemver,
   fetchDetailedCompare,
   fetchDiffReport,
+  fetchBranches,
+  createBranch,
+  checkoutBranch,
+  deleteBranch,
+  compareBranches,
+  mergeBranches,
+  fetchDatasetBlame,
 } from "@/lib/api";
 import { useStudio } from "@/context/StudioContext";
-import { DatasetItem, CommitRecord, DetailedCompareResult } from "@/lib/types";
+import {
+  DatasetItem,
+  CommitRecord,
+  DetailedCompareResult,
+  BranchRecord,
+  ThreeWayMergeComparison,
+  DatasetBlameResponse,
+} from "@/lib/types";
 import { LineageDAG } from "@/components/studio/LineageDAG";
 
 export default function VersionsPage() {
@@ -68,12 +89,61 @@ export default function VersionsPage() {
   const [showAddMeta, setShowAddMeta] = useState(false);
 
   // Multi-Version Diff Studio State
-  const [viewMode, setViewMode] = useState<"detail" | "compare" | "lineage">("detail");
+  const [viewMode, setViewMode] = useState<"detail" | "compare" | "lineage" | "merge" | "blame">("detail");
   const [compareBaseId, setCompareBaseId] = useState<string>("");
   const [compareTargetId, setCompareTargetId] = useState<string>("");
   const [detailedCompare, setDetailedCompare] = useState<DetailedCompareResult | null>(null);
   const [isComparing, setIsComparing] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+
+  // Branching & Merging State
+  const [branches, setBranches] = useState<BranchRecord[]>([]);
+  const [activeBranch, setActiveBranch] = useState<string>("main");
+  const [showBranchDropdown, setShowBranchDropdown] = useState(false);
+  const [showCreateBranchModal, setShowCreateBranchModal] = useState(false);
+  const [newBranchName, setNewBranchName] = useState("");
+  const [newBranchDesc, setNewBranchDesc] = useState("");
+  const [newBranchSource, setNewBranchSource] = useState("main");
+  const [isCreatingBranch, setIsCreatingBranch] = useState(false);
+
+  // 3-Way Merge State
+  const [mergeTargetBranch, setMergeTargetBranch] = useState<string>("main");
+  const [mergeSourceBranch, setMergeSourceBranch] = useState<string>("staging");
+  const [mergeStrategy, setMergeStrategy] = useState<"auto" | "ours" | "theirs" | "union">("auto");
+  const [mergeComparison, setMergeComparison] = useState<ThreeWayMergeComparison | null>(null);
+  const [isComparingMerge, setIsComparingMerge] = useState(false);
+  const [isExecutingMerge, setIsExecutingMerge] = useState(false);
+
+  // Blame Attribution State
+  const [blameData, setBlameData] = useState<DatasetBlameResponse | null>(null);
+  const [isLoadingBlame, setIsLoadingBlame] = useState(false);
+
+  const loadBranches = async (dsName?: string) => {
+    const target = dsName || newCommitDataset || "customer_churn.csv";
+    try {
+      const res = await fetchBranches(target);
+      setBranches(res.branches || []);
+      setActiveBranch(res.active_branch || "main");
+      setMergeTargetBranch(res.active_branch || "main");
+      const other = res.branches.find((b) => b.name !== res.active_branch);
+      if (other) setMergeSourceBranch(other.name);
+    } catch (e) {
+      console.error("Failed to load branches:", e);
+    }
+  };
+
+  const loadBlame = async (dsName?: string) => {
+    setIsLoadingBlame(true);
+    try {
+      const target = dsName || newCommitDataset || "customer_churn.csv";
+      const res = await fetchDatasetBlame(target);
+      setBlameData(res);
+    } catch (e: any) {
+      console.error("Failed to load blame:", e);
+    } finally {
+      setIsLoadingBlame(false);
+    }
+  };
 
   const loadCommits = async () => {
     setIsLoading(true);
@@ -83,9 +153,8 @@ export default function VersionsPage() {
         fetchDatasets(),
       ]);
       setDatasets(datasetList);
-      if (datasetList.length > 0) {
-        setNewCommitDataset(datasetList[0].filename);
-      }
+      const ds = datasetList.length > 0 ? datasetList[0].filename : "customer_churn.csv";
+      setNewCommitDataset(ds);
       setCommits(commitList);
       if (commitList.length > 0) {
         setSelectedCommitId(commitList[0].id);
@@ -95,6 +164,7 @@ export default function VersionsPage() {
         setCompareBaseId(commitList[commitList.length - 1].id);
         setCompareTargetId(commitList[0].id);
       }
+      await loadBranches(ds);
     } catch (err) {
       console.error("Failed to load commits:", err);
     } finally {
@@ -287,6 +357,89 @@ export default function VersionsPage() {
     }
   };
 
+  const handleCheckoutBranch = async (branchName: string) => {
+    try {
+      const target = newCommitDataset || "customer_churn.csv";
+      await checkoutBranch(target, branchName);
+      setActiveBranch(branchName);
+      setShowBranchDropdown(false);
+      await loadBranches(target);
+    } catch (err: any) {
+      alert(`Checkout failed: ${err.message}`);
+    }
+  };
+
+  const handleCreateBranch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newBranchName.trim()) return;
+    setIsCreatingBranch(true);
+    try {
+      const target = newCommitDataset || "customer_churn.csv";
+      await createBranch({
+        dataset_name: target,
+        branch_name: newBranchName.trim(),
+        from_commit_or_branch: newBranchSource,
+        description: newBranchDesc.trim(),
+      });
+      setShowCreateBranchModal(false);
+      setNewBranchName("");
+      setNewBranchDesc("");
+      await loadBranches(target);
+    } catch (err: any) {
+      alert(`Create branch failed: ${err.message}`);
+    } finally {
+      setIsCreatingBranch(false);
+    }
+  };
+
+  const handleDeleteBranch = async (branchName: string) => {
+    if (!confirm(`Delete branch '${branchName}'? This action cannot be undone.`)) return;
+    try {
+      const target = newCommitDataset || "customer_churn.csv";
+      await deleteBranch(target, branchName);
+      await loadBranches(target);
+    } catch (err: any) {
+      alert(`Delete branch failed: ${err.message}`);
+    }
+  };
+
+  const handleRunMergeCompare = async () => {
+    if (!mergeTargetBranch || !mergeSourceBranch) return;
+    setIsComparingMerge(true);
+    try {
+      const target = newCommitDataset || "customer_churn.csv";
+      const res = await compareBranches(target, mergeTargetBranch, mergeSourceBranch);
+      setMergeComparison(res);
+    } catch (err: any) {
+      alert(`Merge comparison failed: ${err.message}`);
+    } finally {
+      setIsComparingMerge(false);
+    }
+  };
+
+  const handleExecuteMerge = async () => {
+    if (!mergeTargetBranch || !mergeSourceBranch) return;
+    setIsExecutingMerge(true);
+    try {
+      const target = newCommitDataset || "customer_churn.csv";
+      const res = await mergeBranches({
+        dataset_name: target,
+        target_branch: mergeTargetBranch,
+        source_branch: mergeSourceBranch,
+        strategy: mergeStrategy,
+        author: "James Uchechi",
+      });
+      alert(res.message || "Merge completed successfully!");
+      await loadCommits();
+      await loadBranches(target);
+      setViewMode("detail");
+    } catch (err: any) {
+      alert(`Merge failed: ${err.message}`);
+    } finally {
+      setIsExecutingMerge(false);
+    }
+  };
+
   return (
     <div className="flex-1 flex flex-col h-full bg-[#F7F5F2] overflow-hidden">
       {/* Top Header */}
@@ -307,6 +460,75 @@ export default function VersionsPage() {
 
         {/* Mode Switcher, Branch Switcher & Commit Button */}
         <div className="flex flex-wrap items-center gap-2">
+          {/* Branch Switcher Dropdown */}
+          <div className="relative">
+            <button
+              onClick={() => setShowBranchDropdown(!showBranchDropdown)}
+              className="px-3 py-1.5 rounded-xl border border-[#E8E4DF] bg-white hover:bg-[#FAF8F5] text-xs font-semibold text-[#1E1915] flex items-center gap-2 cursor-pointer shadow-2xs transition-all"
+            >
+              <GitBranch className="w-3.5 h-3.5 text-[#0061FE]" />
+              <span className="font-mono text-xs">{activeBranch}</span>
+              <ChevronDown className="w-3 h-3 text-[#8C827A]" />
+            </button>
+
+            {showBranchDropdown && (
+              <div className="absolute left-0 mt-1 w-64 bg-white rounded-2xl border border-[#E8E4DF] shadow-xl z-50 p-2 space-y-1 animate-in fade-in-50 zoom-in-95 duration-100">
+                <div className="px-2.5 py-1 text-[10px] font-mono uppercase text-[#8C827A] font-bold flex items-center justify-between">
+                  <span>Branches ({branches.length})</span>
+                  <button
+                    onClick={() => {
+                      setShowBranchDropdown(false);
+                      setShowCreateBranchModal(true);
+                    }}
+                    className="text-[#0061FE] hover:underline flex items-center gap-1 cursor-pointer font-bold"
+                  >
+                    <Plus className="w-2.5 h-2.5" />
+                    <span>New Branch</span>
+                  </button>
+                </div>
+
+                <div className="max-h-48 overflow-y-auto space-y-0.5">
+                  {branches.map((b) => (
+                    <div
+                      key={b.name}
+                      className={`flex items-center justify-between px-2.5 py-2 rounded-xl text-xs transition-colors cursor-pointer ${
+                        b.is_active
+                          ? "bg-[#0061FE]/10 text-[#0061FE] font-bold"
+                          : "hover:bg-[#FAF8F5] text-[#1E1915]"
+                      }`}
+                      onClick={() => handleCheckoutBranch(b.name)}
+                    >
+                      <div className="flex items-center gap-2 truncate">
+                        <GitBranch className="w-3 h-3 shrink-0" />
+                        <span className="truncate font-mono">{b.name}</span>
+                        {b.is_default && (
+                          <span className="text-[9px] px-1.5 py-0.2 rounded bg-neutral-100 text-neutral-600 font-normal">
+                            default
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        {b.is_active && <Check className="w-3.5 h-3.5 text-[#0061FE]" />}
+                        {!b.is_default && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteBranch(b.name);
+                            }}
+                            className="p-1 text-[#8C827A] hover:text-rose-600 rounded cursor-pointer"
+                            title="Delete branch"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
           <div className="flex items-center bg-[#FAF8F5] border border-[#E8E4DF] p-1 rounded-xl text-xs font-semibold">
             <button
               onClick={() => setViewMode("detail")}
@@ -332,6 +554,34 @@ export default function VersionsPage() {
               }`}
             >
               Multi-Version Compare
+            </button>
+            <button
+              onClick={() => {
+                setViewMode("merge");
+                handleRunMergeCompare();
+              }}
+              className={`px-3 py-1 rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${
+                viewMode === "merge"
+                  ? "bg-white text-[#0061FE] font-bold shadow-2xs"
+                  : "text-[#736B63] hover:text-[#1E1915]"
+              }`}
+            >
+              <GitMerge className="w-3 h-3" />
+              <span>3-Way Merge</span>
+            </button>
+            <button
+              onClick={() => {
+                setViewMode("blame");
+                loadBlame();
+              }}
+              className={`px-3 py-1 rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${
+                viewMode === "blame"
+                  ? "bg-white text-[#0061FE] font-bold shadow-2xs"
+                  : "text-[#736B63] hover:text-[#1E1915]"
+              }`}
+            >
+              <History className="w-3 h-3" />
+              <span>Column Blame</span>
             </button>
             <button
               onClick={() => setViewMode("lineage")}
@@ -365,6 +615,287 @@ export default function VersionsPage() {
 
       {viewMode === "lineage" ? (
         <LineageDAG />
+      ) : viewMode === "merge" ? (
+        <div className="flex-1 flex flex-col overflow-y-auto p-6 bg-[#FAF8F5] space-y-6">
+          {/* Merge Control Card */}
+          <div className="p-5 rounded-2xl bg-white border border-[#E8E4DF] shadow-2xs space-y-4">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-[#E8E4DF]">
+              <div>
+                <h2 className="text-sm font-bold text-[#1E1915] flex items-center gap-2">
+                  <GitMerge className="w-4 h-4 text-[#0061FE]" />
+                  <span>3-Way Dataset Branch Merge</span>
+                </h2>
+                <p className="text-xs text-[#8C827A] mt-0.5">
+                  Resolve schema mutations and cell value conflicts against Lowest Common Ancestor (LCA).
+                </p>
+              </div>
+
+              {/* Branch Selection Controls */}
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-1.5 text-xs">
+                  <span className="text-[#8C827A] font-medium">Base into Target:</span>
+                  <select
+                    value={mergeTargetBranch}
+                    onChange={(e) => setMergeTargetBranch(e.target.value)}
+                    className="px-2.5 py-1.5 rounded-xl border border-[#E8E4DF] bg-[#FAF8F5] font-mono text-xs text-[#1E1915] outline-none cursor-pointer"
+                  >
+                    {branches.map((b) => (
+                      <option key={b.name} value={b.name}>
+                        {b.name} (ours)
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="flex items-center gap-1.5 text-xs">
+                  <span className="text-[#8C827A] font-medium">From Source:</span>
+                  <select
+                    value={mergeSourceBranch}
+                    onChange={(e) => setMergeSourceBranch(e.target.value)}
+                    className="px-2.5 py-1.5 rounded-xl border border-[#E8E4DF] bg-[#FAF8F5] font-mono text-xs text-[#1E1915] outline-none cursor-pointer"
+                  >
+                    {branches.map((b) => (
+                      <option key={b.name} value={b.name}>
+                        {b.name} (theirs)
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <button
+                  onClick={handleRunMergeCompare}
+                  disabled={isComparingMerge || mergeTargetBranch === mergeSourceBranch}
+                  className="px-3.5 py-1.5 rounded-xl bg-white border border-[#E8E4DF] hover:bg-[#FAF8F5] text-xs font-semibold text-[#1E1915] flex items-center gap-1.5 cursor-pointer shadow-2xs disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3 h-3 ${isComparingMerge ? "animate-spin" : ""}`} />
+                  <span>Compare</span>
+                </button>
+
+                <button
+                  onClick={handleExecuteMerge}
+                  disabled={isExecutingMerge || mergeTargetBranch === mergeSourceBranch}
+                  className="px-4 py-1.5 rounded-xl bg-[#0061FE] hover:bg-[#0052D4] text-white text-xs font-semibold flex items-center gap-1.5 shadow-sm shadow-[#0061FE]/20 cursor-pointer disabled:opacity-50"
+                >
+                  <GitMerge className="w-3.5 h-3.5" />
+                  <span>{isExecutingMerge ? "Merging..." : "Execute Merge"}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Comparison Status Banner */}
+            {mergeComparison ? (
+              <div className="space-y-4">
+                {mergeComparison.has_conflicts ? (
+                  <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 flex items-start gap-3">
+                    <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+                    <div>
+                      <h4 className="text-xs font-bold text-rose-900">
+                        {mergeComparison.conflict_count} Merge Conflict{mergeComparison.conflict_count > 1 ? "s" : ""} Detected
+                      </h4>
+                      <p className="text-xs text-rose-700 mt-0.5">
+                        Conflicting schema definitions or divergent types detected between {mergeTargetBranch} and {mergeSourceBranch}. Choose a strategy below or manually resolve column actions before merging.
+                      </p>
+                    </div>
+                  </div>
+                ) : mergeComparison.status === "already_up_to_date" ? (
+                  <div className="p-4 rounded-xl bg-blue-50 border border-blue-200 flex items-center gap-3">
+                    <CheckCircle2 className="w-5 h-5 text-blue-600 shrink-0" />
+                    <div className="text-xs text-blue-900 font-medium">
+                      Branches are synchronized. <span className="font-mono font-bold">{mergeTargetBranch}</span> already contains all commits from <span className="font-mono font-bold">{mergeSourceBranch}</span>.
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center gap-3">
+                    <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                    <div className="text-xs text-emerald-900 font-medium">
+                      Clean 3-way merge. All schema additions are non-conflicting and ready to merge into <span className="font-mono font-bold">{mergeTargetBranch}</span> without data loss.
+                    </div>
+                  </div>
+                )}
+
+                {/* Ancestor Info */}
+                <div className="flex flex-wrap items-center gap-4 text-xs text-[#8C827A] p-3 rounded-xl bg-[#FAF8F5] border border-[#E8E4DF]">
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-semibold text-[#5C554D]">Lowest Common Ancestor (Base):</span>
+                    <span className="font-mono font-bold text-[#1E1915]">{mergeComparison.base_commit?.hash}</span>
+                    <span>({mergeComparison.base_commit?.version || "root"})</span>
+                  </div>
+                  <span>•</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-semibold text-[#5C554D]">Target Head:</span>
+                    <span className="font-mono font-bold text-[#1E1915]">{mergeComparison.target_commit?.hash}</span>
+                  </div>
+                  <span>•</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-semibold text-[#5C554D]">Source Head:</span>
+                    <span className="font-mono font-bold text-[#1E1915]">{mergeComparison.source_commit?.hash}</span>
+                  </div>
+                </div>
+
+                {/* Schema Merge Table */}
+                <div className="border border-[#E8E4DF] rounded-xl overflow-hidden bg-white">
+                  <div className="bg-[#FAF8F5] px-4 py-2.5 border-b border-[#E8E4DF] text-xs font-bold text-[#1E1915] flex items-center justify-between">
+                    <span>Schema Resolution Plan</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] text-[#8C827A] uppercase font-mono">Strategy:</span>
+                      <div className="flex items-center gap-1 text-[11px]">
+                        {(["auto", "ours", "theirs", "union"] as const).map((s) => (
+                          <button
+                            key={s}
+                            onClick={() => setMergeStrategy(s)}
+                            className={`px-2 py-0.5 rounded font-mono capitalize cursor-pointer transition-colors ${
+                              mergeStrategy === s
+                                ? "bg-[#0061FE] text-white font-bold"
+                                : "bg-white border border-[#E8E4DF] text-[#736B63] hover:text-[#1E1915]"
+                            }`}
+                          >
+                            {s}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="divide-y divide-[#E8E4DF] max-h-80 overflow-y-auto">
+                    {Object.entries(mergeComparison.schema_merge || {}).map(([col, meta]: [string, any]) => (
+                      <div key={col} className="px-4 py-2.5 flex items-center justify-between text-xs hover:bg-[#FAF8F5] transition-colors">
+                        <div className="flex items-center gap-2.5">
+                          <span className="font-mono font-bold text-[#1E1915]">{col}</span>
+                          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-neutral-100 text-neutral-600">
+                            {meta.dtype || meta.ours_dtype || "Column"}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-3">
+                          {meta.status === "conflict" ? (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-700 border border-rose-200">
+                              Conflict: {meta.ours_dtype} vs {meta.theirs_dtype}
+                            </span>
+                          ) : meta.action === "add" ? (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700 border border-emerald-200">
+                              + Clean Addition ({meta.source})
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-neutral-100 text-neutral-600">
+                              {meta.action}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="p-8 text-center text-xs text-[#8C827A]">
+                Click "Compare" to inspect 3-way schema differences and conflicts between selected branches.
+              </div>
+            )}
+          </div>
+        </div>
+      ) : viewMode === "blame" ? (
+        <div className="flex-1 flex flex-col overflow-y-auto p-6 bg-[#FAF8F5] space-y-6">
+          <div className="p-5 rounded-2xl bg-white border border-[#E8E4DF] shadow-2xs space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-[#E8E4DF]">
+              <div>
+                <h2 className="text-sm font-bold text-[#1E1915] flex items-center gap-2">
+                  <History className="w-4 h-4 text-[#0061FE]" />
+                  <span>Dataset Column & Row Blame Attribution</span>
+                </h2>
+                <p className="text-xs text-[#8C827A] mt-0.5">
+                  Trace the chronological lineage of every column and sample row back to the authoring commit.
+                </p>
+              </div>
+
+              <button
+                onClick={() => loadBlame()}
+                disabled={isLoadingBlame}
+                className="px-3.5 py-1.5 rounded-xl border border-[#E8E4DF] bg-white hover:bg-[#FAF8F5] text-xs font-semibold text-[#1E1915] flex items-center gap-1.5 cursor-pointer shadow-2xs"
+              >
+                <RefreshCw className={`w-3 h-3 ${isLoadingBlame ? "animate-spin" : ""}`} />
+                <span>Refresh Blame</span>
+              </button>
+            </div>
+
+            {isLoadingBlame ? (
+              <div className="p-12 text-center text-xs text-[#8C827A] font-mono">
+                Tracing commit history and blame metadata...
+              </div>
+            ) : blameData ? (
+              <div className="space-y-6">
+                {/* Column Provenance Table */}
+                <div className="border border-[#E8E4DF] rounded-xl overflow-hidden bg-white">
+                  <div className="bg-[#FAF8F5] px-4 py-2.5 border-b border-[#E8E4DF] text-xs font-bold text-[#1E1915] flex items-center justify-between">
+                    <span>Columns Provenance ({blameData.total_columns} columns)</span>
+                    <span className="text-[10px] font-mono text-[#8C827A] uppercase">{blameData.dataset_name}</span>
+                  </div>
+
+                  <div className="divide-y divide-[#E8E4DF]">
+                    {blameData.columns.map((col) => (
+                      <div key={col.column} className="p-4 hover:bg-[#FAF8F5] transition-colors space-y-2">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 font-mono">
+                            <span className="font-bold text-sm text-[#1E1915]">{col.column}</span>
+                            <span className="text-[10px] px-2 py-0.5 rounded-md bg-[#0061FE]/10 text-[#0061FE] font-bold">
+                              {col.introduced_version}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-3 text-xs text-[#8C827A]">
+                            <div className="flex items-center gap-1.5">
+                              <div className="w-5 h-5 rounded-full bg-[#1E1915] text-white flex items-center justify-center text-[10px] font-bold">
+                                {col.introduced_author.slice(0, 2).toUpperCase()}
+                              </div>
+                              <span className="font-medium text-[#1E1915]">{col.introduced_author}</span>
+                            </div>
+                            <span>•</span>
+                            <span className="font-mono text-[11px]">{col.introduced_hash}</span>
+                            <span>•</span>
+                            <span>{col.introduced_date}</span>
+                          </div>
+                        </div>
+
+                        <p className="text-xs text-[#5C554D] italic pl-2 border-l-2 border-[#E8E4DF]">
+                          "{col.introduced_message}"
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Sample Row Attribution */}
+                {blameData.sample_rows_blame && blameData.sample_rows_blame.length > 0 && (
+                  <div className="border border-[#E8E4DF] rounded-xl overflow-hidden bg-white">
+                    <div className="bg-[#FAF8F5] px-4 py-2.5 border-b border-[#E8E4DF] text-xs font-bold text-[#1E1915]">
+                      Sample Rows Attribution
+                    </div>
+                    <div className="divide-y divide-[#E8E4DF] max-h-72 overflow-y-auto font-mono text-[11px]">
+                      {blameData.sample_rows_blame.map((row) => (
+                        <div key={row.row_index} className="p-3 hover:bg-[#FAF8F5] flex flex-col md:flex-row md:items-center justify-between gap-2">
+                          <div className="flex items-center gap-3 truncate">
+                            <span className="text-[#8C827A] text-[10px] font-bold w-8">#{row.row_index + 1}</span>
+                            <span className="text-[#1E1915] truncate">
+                              {JSON.stringify(row.data).slice(0, 80)}...
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2 text-[10px] text-[#8C827A] shrink-0">
+                            <span className="font-bold text-[#0061FE]">{row.blame_hash}</span>
+                            <span>by {row.blame_author}</span>
+                            <span>({row.blame_message.slice(0, 25)})</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="p-8 text-center text-xs text-[#8C827A]">
+                No blame metadata recorded yet.
+              </div>
+            )}
+          </div>
+        </div>
       ) : (
         /* Main Diff Studio */
         <div className="flex-1 flex overflow-hidden">
@@ -1007,6 +1538,93 @@ export default function VersionsPage() {
                   className="px-4 py-2 rounded-xl bg-[#0061FE] hover:bg-[#0052D4] text-white text-xs font-semibold shadow-sm disabled:opacity-50 transition-all cursor-pointer"
                 >
                   {isSubmitting ? "Creating..." : "Commit Snapshot"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Create Branch Modal */}
+      {showCreateBranchModal && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl border border-[#E8E4DF] shadow-2xl max-w-md w-full p-6 space-y-4 animate-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between border-b border-[#E8E4DF] pb-3">
+              <h3 className="text-sm font-bold text-[#1E1915] flex items-center gap-2">
+                <GitBranch className="w-4 h-4 text-[#0061FE]" />
+                <span>Create Dataset Branch</span>
+              </h3>
+              <button
+                onClick={() => setShowCreateBranchModal(false)}
+                className="text-[#8C827A] hover:text-[#1E1915] p-1 rounded cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateBranch} className="space-y-3">
+              <div>
+                <label className="text-[11px] font-semibold text-[#5C554D] block mb-1">
+                  Branch Name
+                </label>
+                <input
+                  required
+                  type="text"
+                  value={newBranchName}
+                  onChange={(e) => setNewBranchName(e.target.value)}
+                  placeholder="e.g. feature/impute-outliers, experiment-churn"
+                  className="w-full px-3 py-2 rounded-xl border border-[#E8E4DF] text-xs font-mono text-[#1E1915] outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="text-[11px] font-semibold text-[#5C554D] block mb-1">
+                  Branch From
+                </label>
+                <select
+                  value={newBranchSource}
+                  onChange={(e) => setNewBranchSource(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-[#E8E4DF] bg-[#FAF8F5] text-xs font-mono text-[#1E1915] outline-none cursor-pointer"
+                >
+                  {branches.map((b) => (
+                    <option key={b.name} value={b.name}>
+                      Branch: {b.name} ({b.head_hash})
+                    </option>
+                  ))}
+                  {commits.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      Commit: {c.version} ({c.hash}) - {c.message.slice(0, 20)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-[11px] font-semibold text-[#5C554D] block mb-1">
+                  Description (optional)
+                </label>
+                <textarea
+                  value={newBranchDesc}
+                  onChange={(e) => setNewBranchDesc(e.target.value)}
+                  placeholder="State the objective or hypothesis of this data branch..."
+                  className="w-full px-3 py-2 rounded-xl border border-[#E8E4DF] text-xs text-[#1E1915] outline-none h-20 resize-none"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowCreateBranchModal(false)}
+                  className="px-4 py-2 rounded-xl border border-[#E8E4DF] hover:bg-[#FAF8F5] text-xs font-semibold text-[#736B63] cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isCreatingBranch || !newBranchName.trim()}
+                  className="px-4 py-2 rounded-xl bg-[#0061FE] hover:bg-[#0052D4] text-white text-xs font-semibold shadow-sm disabled:opacity-50 transition-all cursor-pointer"
+                >
+                  {isCreatingBranch ? "Creating..." : "Create Branch"}
                 </button>
               </div>
             </form>
