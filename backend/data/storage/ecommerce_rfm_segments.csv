@@ -1,0 +1,31 @@
+customer_id,frequency_purchases,monetary_value,recency_days,rfm_segment,lifetime_margin_pct
+USR-2000,1,45.0,180,Lost,0.18
+USR-2001,5,280.5,25,Loyal,0.32
+USR-2002,12,1420.0,4,Champions,0.45
+USR-2003,3,110.0,90,At Risk,0.22
+USR-2004,22,3950.0,2,Champions,0.51
+USR-2005,8,680.0,14,Potential,0.35
+USR-2006,15,1890.0,7,Champions,0.42
+USR-2007,2,95.0,120,Lost,0.15
+USR-2008,9,820.0,18,Loyal,0.38
+USR-2009,31,5100.0,1,Champions,0.54
+USR-2010,4,210.0,65,At Risk,0.25
+USR-2011,18,2350.0,5,Champions,0.48
+USR-2012,7,590.0,30,Potential,0.3
+USR-2013,11,1180.0,12,Loyal,0.39
+USR-2014,26,4200.0,3,Champions,0.52
+USR-2015,6,490.0,40,Potential,0.28
+USR-2016,14,1640.0,9,Champions,0.44
+USR-2017,2,85.0,150,Lost,0.16
+USR-2018,19,2600.0,6,Champions,0.49
+USR-2019,28,4800.0,2,Champions,0.53
+USR-2020,5,390.0,45,Potential,0.29
+USR-2021,8,720.0,20,Loyal,0.36
+USR-2022,16,1950.0,8,Champions,0.46
+USR-2023,3,130.0,110,At Risk,0.2
+USR-2024,21,3450.0,4,Champions,0.5
+USR-2025,10,940.0,16,Loyal,0.37
+USR-2026,13,1320.0,11,Loyal,0.4
+USR-2027,1,50.0,200,Lost,0.14
+USR-2028,24,3800.0,3,Champions,0.51
+USR-2029,17,2100.0,7,Champions,0.47
