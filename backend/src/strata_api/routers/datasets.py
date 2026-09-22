@@ -251,6 +251,132 @@ async def list_datasets():
     return items
 
 
+@router.get("/search")
+async def search_datasets(
+    q: Optional[str] = Query(None, description="Global full-text search across titles, descriptions, filenames, and tags"),
+    column: Optional[str] = Query(None, description="Schema-based search matching column names"),
+    format: Optional[str] = Query(None, description="Filter by format: csv, parquet, excel, json, etc."),
+    tag: Optional[str] = Query(None, description="Filter by specific tag"),
+    min_quality: Optional[int] = Query(None, description="Minimum data quality score (0-100)"),
+    min_rows: Optional[int] = Query(None, description="Minimum total rows"),
+    max_rows: Optional[int] = Query(None, description="Maximum total rows"),
+    sort_by: str = Query("recent", description="Sort by: recent, quality, size, name, rows"),
+):
+    """Global full-text, schema-based, and faceted search across datasets."""
+    results = []
+
+    for r in _datasets_db.values():
+        matched_reasons = []
+
+        # 1. Full-text search matching
+        if q:
+            q_lower = q.lower().strip()
+            name_match = q_lower in r.get("name", "").lower()
+            file_match = q_lower in r.get("filename", "").lower()
+            desc_match = q_lower in (r.get("description") or "").lower()
+            tag_match = any(q_lower in t.lower() for t in r.get("tags", []))
+            # Also search column names
+            col_match = any(q_lower in c.get("name", "").lower() for c in r.get("schema_fields", []))
+
+            if name_match:
+                matched_reasons.append("Title match")
+            if file_match:
+                matched_reasons.append("Filename match")
+            if desc_match:
+                matched_reasons.append("Description match")
+            if tag_match:
+                matched_reasons.append("Tag match")
+            if col_match:
+                matched_reasons.append("Column schema match")
+
+            if not (name_match or file_match or desc_match or tag_match or col_match):
+                continue
+
+        # 2. Schema-based column filter
+        if column:
+            col_target = column.lower().strip()
+            matched_cols = [c.get("name") for c in r.get("schema_fields", []) if col_target in c.get("name", "").lower()]
+            if not matched_cols:
+                continue
+            matched_reasons.append(f"Contains column '{', '.join(matched_cols)}'")
+
+        # 3. Format filter
+        if format and format.lower() != "all":
+            if r.get("format", "").lower() != format.lower().strip():
+                continue
+
+        # 4. Tag filter
+        if tag:
+            if tag.lower() not in [t.lower() for t in r.get("tags", [])]:
+                continue
+
+        # 5. Quality filter
+        if min_quality is not None:
+            if (r.get("quality_score") or 0) < min_quality:
+                continue
+
+        # 6. Row count range
+        rows = r.get("total_rows", 0)
+        if min_rows is not None and rows < min_rows:
+            continue
+        if max_rows is not None and rows > max_rows:
+            continue
+
+        item = {
+            "id": r["id"],
+            "name": r["name"],
+            "filename": r["filename"],
+            "description": r.get("description"),
+            "tags": r.get("tags", []),
+            "format": r.get("format", "unknown"),
+            "content_hash": r.get("content_hash", ""),
+            "view_name": r.get("view_name"),
+            "total_rows": r.get("total_rows", 0),
+            "total_columns": r.get("total_columns", 0),
+            "size_bytes": r.get("size_bytes", 0),
+            "created_at": r.get("created_at"),
+            "quality_score": r.get("quality_score"),
+            "latest_version": r.get("latest_version", "v1.0.0"),
+            "version_count": r.get("version_count", 1),
+            "matched_reasons": matched_reasons if matched_reasons else ["Indexed"],
+            "matched_columns": [c.get("name") for c in r.get("schema_fields", []) if (column and column.lower() in c.get("name", "").lower()) or (q and q.lower() in c.get("name", "").lower())],
+        }
+        results.append(item)
+
+    # Sorting
+    if sort_by == "quality":
+        results.sort(key=lambda x: x.get("quality_score") or 0, reverse=True)
+    elif sort_by == "size":
+        results.sort(key=lambda x: x.get("size_bytes") or 0, reverse=True)
+    elif sort_by == "rows":
+        results.sort(key=lambda x: x.get("total_rows") or 0, reverse=True)
+    elif sort_by == "name":
+        results.sort(key=lambda x: x.get("name", "").lower())
+    else:  # recent
+        results.sort(key=lambda x: x.get("created_at") or "", reverse=True)
+
+    # Compute facet statistics
+    all_formats = {}
+    all_tags = {}
+    for d in _datasets_db.values():
+        fmt = d.get("format", "unknown").lower()
+        all_formats[fmt] = all_formats.get(fmt, 0) + 1
+        for t in d.get("tags", []):
+            all_tags[t] = all_tags.get(t, 0) + 1
+
+    return {
+        "query": q,
+        "column_filter": column,
+        "total_results": len(results),
+        "results": results,
+        "facets": {
+            "formats": all_formats,
+            "tags": dict(sorted(all_tags.items(), key=lambda x: x[1], reverse=True)[:15]),
+            "total_indexed": len(_datasets_db),
+        }
+    }
+
+
 @router.delete("")
 async def clear_all_datasets():
     """Clear all datasets and reset commit history."""

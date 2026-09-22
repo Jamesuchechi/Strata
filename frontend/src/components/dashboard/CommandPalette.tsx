@@ -1,6 +1,5 @@
-"use client";
-
 import React, { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import {
   Search,
   FileSpreadsheet,
@@ -13,7 +12,11 @@ import {
   X,
   Layers,
   Zap,
+  Building2,
+  CreditCard,
 } from "lucide-react";
+import { fetchDatasets } from "@/lib/api";
+import { DatasetItem } from "@/lib/types";
 
 interface CommandPaletteProps {
   isOpen: boolean;
@@ -24,38 +27,38 @@ interface CommandPaletteProps {
 interface PaletteItem {
   id: string;
   title: string;
-  category: "Datasets" | "Actions" | "Queries" | "Git Versions";
+  category: "Datasets" | "Actions" | "Queries" | "Git Versions" | "Workspace";
   subtitle?: string;
   icon: React.ReactNode;
   shortcut?: string;
+  href?: string;
 }
 
 export function CommandPalette({ isOpen, onClose, onSelectAction }: CommandPaletteProps) {
+  const router = useRouter();
   const [query, setQuery] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [liveDatasets, setLiveDatasets] = useState<DatasetItem[]>([]);
+
+  useEffect(() => {
+    if (isOpen) {
+      fetchDatasets()
+        .then((data) => setLiveDatasets(data))
+        .catch(() => setLiveDatasets([]));
+    }
+  }, [isOpen]);
+
+  const datasetItems: PaletteItem[] = liveDatasets.map((d) => ({
+    id: `dataset-${d.id}`,
+    title: d.filename,
+    category: "Datasets" as const,
+    subtitle: `${d.format.toUpperCase()} · ${d.total_rows.toLocaleString()} rows · Quality: ${d.quality_score || 90}%`,
+    icon: <Database className="w-4 h-4 text-[#0061FE]" />,
+    href: `/datasets/${d.id}`,
+  }));
 
   const items: PaletteItem[] = [
-    {
-      id: "dataset-orders",
-      title: "orders_q3_2026.xlsx",
-      category: "Datasets",
-      subtitle: "Multi-Sheet Excel · 4 Sheets · 84,200 rows",
-      icon: <FileSpreadsheet className="w-4 h-4 text-emerald-600" />,
-    },
-    {
-      id: "dataset-telecom",
-      title: "telecom_churn_features.parquet",
-      category: "Datasets",
-      subtitle: "Apache Parquet · 1.42M rows · 28 cols",
-      icon: <Database className="w-4 h-4 text-[#0061FE]" />,
-    },
-    {
-      id: "dataset-chem",
-      title: "kinase_inhibitors_screen.sdf",
-      category: "Datasets",
-      subtitle: "PubChem SDF · 2,450 3D Compounds",
-      icon: <Zap className="w-4 h-4 text-purple-600" />,
-    },
+    ...datasetItems,
     {
       id: "action-upload",
       title: "Upload New Dataset",
@@ -63,6 +66,23 @@ export function CommandPalette({ isOpen, onClose, onSelectAction }: CommandPalet
       subtitle: "Supports Excel, CSV, Parquet, Arrow, GeoJSON, SDF",
       icon: <Layers className="w-4 h-4 text-[#0061FE]" />,
       shortcut: "⌘U",
+      href: "/upload",
+    },
+    {
+      id: "action-workspace",
+      title: "Workspace & Team Settings",
+      category: "Workspace",
+      subtitle: "Manage team roles, member invites, and permission overrides",
+      icon: <Building2 className="w-4 h-4 text-indigo-600" />,
+      href: "/workspace",
+    },
+    {
+      id: "action-billing",
+      title: "Billing & Storage Quotas",
+      category: "Workspace",
+      subtitle: "Review storage limits, compute hours, and upgrade to Pro",
+      icon: <CreditCard className="w-4 h-4 text-emerald-600" />,
+      href: "/billing",
     },
     {
       id: "action-query",
@@ -71,21 +91,16 @@ export function CommandPalette({ isOpen, onClose, onSelectAction }: CommandPalet
       subtitle: "Run sub-second analytical SQL on local WASM engine",
       icon: <Code2 className="w-4 h-4 text-amber-600" />,
       shortcut: "⌘N",
-    },
-    {
-      id: "query-top-retention",
-      title: "Cohort Retention Rate (Last 90 Days)",
-      category: "Queries",
-      subtitle: "Saved SQL Query · Last run 2h ago",
-      icon: <Code2 className="w-4 h-4 text-[#5C554D]" />,
+      href: "/query",
     },
     {
       id: "version-commit",
-      title: "Create Dataset Snapshot / Git Commit",
+      title: "View Time-Travel Diffs & Version DAG",
       category: "Git Versions",
-      subtitle: "Create reproducible version hash with schema diff",
-      icon: <GitBranch className="w-4 h-4 text-emerald-600" />,
+      subtitle: "Statistical distribution drift, SemVer tags & pinned versions",
+      icon: <GitBranch className="w-4 h-4 text-purple-600" />,
       shortcut: "⌘S",
+      href: "/versions",
     },
     {
       id: "action-analyst",
@@ -94,6 +109,7 @@ export function CommandPalette({ isOpen, onClose, onSelectAction }: CommandPalet
       subtitle: "Natural language query & automated anomaly explanation",
       icon: <Sparkles className="w-4 h-4 text-[#0061FE]" />,
       shortcut: "⌘J",
+      href: "/analyst",
     },
   ];
 
@@ -121,7 +137,12 @@ export function CommandPalette({ isOpen, onClose, onSelectAction }: CommandPalet
         setSelectedIndex((prev) => (prev - 1 + filteredItems.length) % (filteredItems.length || 1));
       } else if (e.key === "Enter" && filteredItems[selectedIndex]) {
         e.preventDefault();
-        if (onSelectAction) onSelectAction(filteredItems[selectedIndex].id);
+        const selected = filteredItems[selectedIndex];
+        if (selected.href) {
+          router.push(selected.href);
+        } else if (onSelectAction) {
+          onSelectAction(selected.id);
+        }
         onClose();
       }
     };
@@ -170,7 +191,11 @@ export function CommandPalette({ isOpen, onClose, onSelectAction }: CommandPalet
                 <div
                   key={item.id}
                   onClick={() => {
-                    if (onSelectAction) onSelectAction(item.id);
+                    if (item.href) {
+                      router.push(item.href);
+                    } else if (onSelectAction) {
+                      onSelectAction(item.id);
+                    }
                     onClose();
                   }}
                   onMouseEnter={() => setSelectedIndex(index)}

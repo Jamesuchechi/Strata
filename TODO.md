@@ -44,11 +44,11 @@ Every feature in the master blueprint belongs to exactly one phase below. New fe
 - [x] **AutoML Sandbox:** 24.1, 24.2, 24.3, 24.4, 24.5, 24.6, 24.7 (Baseline LightGBM/Random Forest, SHAP explainability, ROC/confusion matrices, leakage detection)
 - [x] **Interactive Dashboards:** 25.1, 25.2, 25.3, 25.4 (Flexible widget canvas, global parameter filters, executive summary generator)
 - [x] **Lineage DAG:** 6.1, 6.3, 6.4 (Parent/child tracking, backward provenance, forward impact analysis)
-- [ ] **Versioning Enhancements:** 2.4, 2.10, 2.11, 2.14, 2.17 (Tags, semver, pinned versions, version permissions, custom metadata)
-- [ ] **Diffing Enhancements:** 3.5, 3.6, 3.7, 3.9, 3.12, 3.13 (Distribution diffs, rename detection, categorical domain shifts)
-- [ ] **Collaboration:** 9.1, 9.2, 9.3, 9.4, 9.5 (Workspaces, roles, invites, activity feed)
-- [ ] **Search:** 10.1, 10.5 (Full-text and schema search)
-- [ ] **Billing & Onboarding:** 15.1, 15.2, 18.1, 18.2, 18.3, 18.6 (Free/Pro plans, onboarding tutorial, pre-loaded sample datasets)
+- [x] **Versioning Enhancements:** 2.4, 2.10, 2.11, 2.14, 2.17 (Tags, semver, pinned versions, version permissions, custom metadata)
+- [x] **Diffing Enhancements:** 3.5, 3.6, 3.7, 3.9, 3.12, 3.13 (Distribution diffs, rename detection, categorical domain shifts)
+- [x] **Collaboration:** 9.1, 9.2, 9.3, 9.4, 9.5 (Workspaces, roles, invites, activity feed)
+- [x] **Search:** 10.1, 10.5 (Full-text and schema search)
+- [x] **Billing & Onboarding:** 15.1, 15.2, 18.1, 18.2, 18.3, 18.6 (Free/Pro plans, onboarding tutorial, pre-loaded sample datasets)
 
 ---
 

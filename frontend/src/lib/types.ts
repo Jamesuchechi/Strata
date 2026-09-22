@@ -104,3 +104,165 @@ export interface ShareResult {
   dataset_name: string;
 }
 
+export interface CommitRecord {
+  id: string;
+  hash: string;
+  full_hash?: string;
+  version: string;
+  semver?: {
+    major: number;
+    minor: number;
+    patch: number;
+    semver_str: string;
+  };
+  dataset_name?: string;
+  message: string;
+  author: string;
+  date: string;
+  deltaRows: string;
+  deltaColumns: string;
+  status: "verified" | "clean";
+  tags?: string[];
+  is_pinned?: boolean;
+  access_level?: "public" | "workspace" | "private_draft";
+  custom_metadata?: Record<string, any>;
+  diffSummary: {
+    addedCols: string[];
+    removedCols: string[];
+    modifiedCols: string[];
+  };
+}
+
+export interface DistributionShiftItem {
+  column: string;
+  mean: { v1: number; v2: number; delta: number };
+  median: { v1: number; v2: number; delta: number };
+  variance: { v1: number; v2: number; delta: number };
+  iqr: { v1: number; v2: number; delta: number };
+  min: { v1: number; v2: number; delta: number };
+  max: { v1: number; v2: number; delta: number };
+  shift_severity: "high" | "normal";
+}
+
+export interface DetailedCompareResult {
+  base_commit: CommitRecord;
+  target_commit: CommitRecord;
+  schema_diff: {
+    added_columns: string[];
+    removed_columns: string[];
+    common_columns: string[];
+    type_changes: { column: string; old_type: string; new_type: string }[];
+    identical_schema: boolean;
+  };
+  distribution_shifts: Record<string, DistributionShiftItem>;
+  missing_and_duplicates: {
+    null_deltas: Record<string, { v1_null_pct: number; v2_null_pct: number; delta_pct: number }>;
+    duplicate_rows: { v1: number; v2: number; delta: number };
+  };
+  smart_renames: {
+    old_column: string;
+    new_column: string;
+    confidence: number;
+    type: string;
+    reason: string;
+  }[];
+  categorical_domain_shifts: Record<
+    string,
+    {
+      column: string;
+      added_categories: string[];
+      dropped_categories: string[];
+      v1_total_categories: number;
+      v2_total_categories: number;
+    }
+  >;
+  row_delta: {
+    base_delta: string;
+    target_delta: string;
+  };
+}
+
+export interface WorkspaceItem {
+  id: string;
+  name: string;
+  slug: string;
+  description?: string;
+  plan: string;
+  created_at: string;
+  owner_id: string;
+}
+
+export interface WorkspaceMember {
+  id: string;
+  user_id: string;
+  name: string;
+  email: string;
+  role: "Owner" | "Admin" | "Editor" | "Analyst" | "Viewer";
+  joined_at: string;
+  avatar: string;
+}
+
+export interface WorkspaceInvite {
+  id: string;
+  email: string;
+  role: string;
+  invite_token: string;
+  invite_url?: string;
+  created_at: string;
+  status: "pending" | "accepted";
+}
+
+export interface ActivityFeedItem {
+  id: string;
+  workspace_id: string;
+  dataset_name: string;
+  actor_name: string;
+  action: string;
+  details: string;
+  timestamp: string;
+  badge_color: string;
+}
+
+export interface SearchFacetItem {
+  formats: Record<string, number>;
+  tags: Record<string, number>;
+  total_indexed: number;
+}
+
+export interface SearchResponse {
+  query?: string;
+  column_filter?: string;
+  total_results: number;
+  results: (DatasetItem & { matched_reasons: string[]; matched_columns: string[] })[];
+  facets: SearchFacetItem;
+}
+
+export interface BillingUsageResponse {
+  current_plan: string;
+  tier: "free" | "pro" | "team";
+  price_per_month: number;
+  storage_limit_bytes: number;
+  storage_used_bytes: number;
+  storage_used_mb: number;
+  storage_limit_mb: number;
+  storage_percentage: number;
+  dataset_limit: number;
+  datasets_count: number;
+  datasets_percentage: number;
+  ai_queries_limit: number;
+  ai_queries_used: number;
+  compute_hours_limit: number;
+  compute_hours_used: number;
+  auto_ml_models_limit: number;
+  auto_ml_models_used: number;
+  next_billing_date: string;
+  tiers_available: {
+    id: string;
+    name: string;
+    price: string;
+    billing_period: string;
+    features: string[];
+    is_current: boolean;
+  }[];
+}
+

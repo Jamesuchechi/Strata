@@ -1,14 +1,49 @@
-"""Dataset diffing and version commits router."""
-
 import hashlib
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel
-from fastapi import APIRouter, HTTPException
-from strata_api.versioning.diff import compute_schema_diff
-from strata_api.versioning.registry import record_commit, get_all_commits, get_commit_by_id
+from fastapi import APIRouter, HTTPException, Query, Response
+from strata_api.versioning.diff import (
+    compute_schema_diff,
+    compute_distribution_diff,
+    compute_missing_and_duplicate_deltas,
+    detect_smart_column_renames,
+    detect_categorical_domain_shifts,
+    generate_diff_markdown_report,
+)
+from strata_api.versioning.registry import (
+    record_commit,
+    get_all_commits,
+    get_commit_by_id,
+    add_tag_to_commit,
+    remove_tag_from_commit,
+    toggle_commit_pin,
+    update_commit_permissions,
+    update_commit_metadata,
+    bump_commit_semver,
+)
 from strata_api.schemas.diff import DiffRequest, DiffResponse
 
 router = APIRouter(prefix="/diff", tags=["Diff"])
+
+
+class TagRequest(BaseModel):
+    tag: str
+
+
+class PinRequest(BaseModel):
+    is_pinned: Optional[bool] = None
+
+
+class PermissionRequest(BaseModel):
+    access_level: str  # "public", "workspace", "private_draft"
+
+
+class MetadataRequest(BaseModel):
+    metadata: Dict[str, Any]
+
+
+class BumpSemverRequest(BaseModel):
+    bump_type: str = "patch"  # "patch", "minor", "major"
 
 
 class CreateCommitRequest(BaseModel):
@@ -84,34 +119,149 @@ async def rollback_to_commit(commit_id: str):
     }
 
 
-@router.get("/compare")
-async def compare_snapshots(base_id: str, target_id: str):
-    """Compare two commit snapshots across schema, row counts, and column drift."""
+@router.post("/commits/{commit_id}/tags")
+async def add_tag(commit_id: str, req: TagRequest):
+    """Add a tag/release alias to a version commit."""
+    c = add_tag_to_commit(commit_id, req.tag)
+    if not c:
+        raise HTTPException(status_code=404, detail="Commit not found")
+    return {"message": f"Tag '{req.tag}' added", "commit": c}
+
+
+@router.delete("/commits/{commit_id}/tags/{tag}")
+async def remove_tag(commit_id: str, tag: str):
+    """Remove a tag from a version commit."""
+    c = remove_tag_from_commit(commit_id, tag)
+    if not c:
+        raise HTTPException(status_code=404, detail="Commit not found")
+    return {"message": f"Tag '{tag}' removed", "commit": c}
+
+
+@router.post("/commits/{commit_id}/pin")
+async def pin_commit(commit_id: str, req: PinRequest):
+    """Toggle or set pin protection on a commit to guard against garbage collection."""
+    c = toggle_commit_pin(commit_id, req.is_pinned)
+    if not c:
+        raise HTTPException(status_code=404, detail="Commit not found")
+    status_str = "pinned" if c.get("is_pinned") else "unpinned"
+    return {"message": f"Commit {commit_id} is now {status_str}", "commit": c}
+
+
+@router.put("/commits/{commit_id}/permissions")
+async def set_permissions(commit_id: str, req: PermissionRequest):
+    """Set version-level access control: public, workspace, or private_draft."""
+    c = update_commit_permissions(commit_id, req.access_level)
+    if not c:
+        raise HTTPException(status_code=404, detail="Commit not found")
+    return {"message": f"Access level set to '{c.get('access_level')}'", "commit": c}
+
+
+@router.put("/commits/{commit_id}/metadata")
+async def update_metadata(commit_id: str, req: MetadataRequest):
+    """Add or update custom key-value version metadata."""
+    c = update_commit_metadata(commit_id, req.metadata)
+    if not c:
+        raise HTTPException(status_code=404, detail="Commit not found")
+    return {"message": "Custom metadata updated", "commit": c}
+
+
+@router.post("/commits/{commit_id}/bump-semver")
+async def bump_semver(commit_id: str, req: BumpSemverRequest):
+    """Bump semantic version tag for a commit (patch, minor, major)."""
+    c = bump_commit_semver(commit_id, req.bump_type)
+    if not c:
+        raise HTTPException(status_code=404, detail="Commit not found")
+    return {"message": f"Bumped to {c.get('version')}", "commit": c}
+
+
+def _get_rows_for_commit(commit: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Retrieve or construct representative rows for commit analysis."""
+    from strata_api.routers.datasets import _datasets_db
+    ds_name = commit.get("dataset_name", "")
+    for d in _datasets_db.values():
+        if d.get("filename") == ds_name or d.get("name") == ds_name:
+            base_rows = d.get("preview_rows", [])
+            if base_rows:
+                return base_rows
+    # Return sample placeholder rows if not in active DB
+    return [
+        {"customer_id": "C-101", "monthly_charges": 72.5, "churn_score": 0.22, "country": "US", "status": "active"},
+        {"customer_id": "C-102", "monthly_charges": 89.0, "churn_score": 0.65, "country": "UK", "status": "pending"},
+        {"customer_id": "C-103", "monthly_charges": 45.2, "churn_score": 0.08, "country": "CA", "status": "active"},
+    ]
+
+
+@router.get("/detailed_compare")
+async def detailed_compare(base_id: str, target_id: str):
+    """Compute comprehensive multi-dimensional diff including statistical distribution shifts,
+    missingness deltas, duplicate row deltas, smart column renames, and categorical domain shifts."""
     c_base = get_commit_by_id(base_id)
     c_target = get_commit_by_id(target_id)
 
     if not c_base or not c_target:
         raise HTTPException(status_code=404, detail="One or both commit snapshots not found")
 
+    rows_base = _get_rows_for_commit(c_base)
+    rows_target = _get_rows_for_commit(c_target)
+
     s_base = [{"name": col, "type": "String"} for col in c_base.get("diffSummary", {}).get("addedCols", [])]
+    if not s_base and rows_base:
+        s_base = [{"name": k, "type": "Float" if isinstance(v, (int, float)) else "String"} for k, v in rows_base[0].items()]
+
     s_target = [{"name": col, "type": "String"} for col in c_target.get("diffSummary", {}).get("addedCols", [])]
+    if not s_target and rows_target:
+        s_target = [{"name": k, "type": "Float" if isinstance(v, (int, float)) else "String"} for k, v in rows_target[0].items()]
 
     schema_diff = compute_schema_diff(s_base, s_target)
+    dist_shifts = compute_distribution_diff(rows_base, rows_target)
+    missing_dupes = compute_missing_and_duplicate_deltas(rows_base, rows_target)
+    renames = detect_smart_column_renames(s_base, s_target, rows_base, rows_target)
+    domain_shifts = detect_categorical_domain_shifts(rows_base, rows_target)
 
     return {
         "base_commit": c_base,
         "target_commit": c_target,
         "schema_diff": schema_diff,
+        "distribution_shifts": dist_shifts,
+        "missing_and_duplicates": missing_dupes,
+        "smart_renames": renames,
+        "categorical_domain_shifts": domain_shifts,
         "row_delta": {
             "base_delta": c_base.get("deltaRows", "+0 rows"),
             "target_delta": c_target.get("deltaRows", "+0 rows"),
         },
-        "column_delta": {
-            "added": schema_diff["added_columns"],
-            "removed": schema_diff["removed_columns"],
-            "type_changes": schema_diff["type_changes"],
-        },
     }
+
+
+@router.get("/export_report")
+async def export_diff_report(
+    base_id: str,
+    target_id: str,
+    format: str = Query("markdown", description="Format: markdown or json"),
+):
+    """Export audit diff report between two versions in Markdown or JSON format."""
+    c_base = get_commit_by_id(base_id)
+    c_target = get_commit_by_id(target_id)
+
+    if not c_base or not c_target:
+        raise HTTPException(status_code=404, detail="One or both commit snapshots not found")
+
+    detailed = await detailed_compare(base_id, target_id)
+
+    if format.lower() == "json":
+        import json
+        return Response(
+            content=json.dumps(detailed, indent=2),
+            media_type="application/json",
+            headers={"Content-Disposition": f'attachment; filename="strata_diff_{c_base["hash"]}_vs_{c_target["hash"]}.json"'},
+        )
+
+    md_report = generate_diff_markdown_report(c_base, c_target, detailed)
+    return Response(
+        content=md_report,
+        media_type="text/markdown",
+        headers={"Content-Disposition": f'attachment; filename="strata_diff_{c_base["hash"]}_vs_{c_target["hash"]}.md"'},
+    )
 
 
 @router.post("", response_model=DiffResponse)

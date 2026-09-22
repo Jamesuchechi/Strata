@@ -23,6 +23,8 @@ import {
   Layers,
   LayoutDashboard,
   BarChart3,
+  Building2,
+  CreditCard,
 } from "lucide-react";
 import { fetchDatasets } from "@/lib/api";
 import { DatasetItem } from "@/lib/types";
@@ -120,6 +122,20 @@ export function DashboardSidebar({
       label: "Git Versions & Diffs",
       icon: <GitBranch className="w-4 h-4 text-purple-600" />,
       matches: (path: string) => path.startsWith("/versions"),
+    },
+    {
+      id: "workspace",
+      href: "/workspace",
+      label: "Workspace & Team",
+      icon: <Building2 className="w-4 h-4 text-indigo-600" />,
+      matches: (path: string) => path.startsWith("/workspace"),
+    },
+    {
+      id: "billing",
+      href: "/billing",
+      label: "Billing & Quotas",
+      icon: <CreditCard className="w-4 h-4 text-emerald-600" />,
+      matches: (path: string) => path.startsWith("/billing"),
     },
   ];
 

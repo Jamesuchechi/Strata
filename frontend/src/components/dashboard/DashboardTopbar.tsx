@@ -21,8 +21,14 @@ import {
   Database,
   Check,
   Sparkles,
+  History,
+  Building2,
+  CreditCard,
 } from "lucide-react";
 import { clearStoredAuth, getStoredUser } from "@/lib/api";
+import { OnboardingModal } from "@/components/onboarding/OnboardingModal";
+import { SdkDocsModal } from "@/components/docs/SdkDocsModal";
+import { ChangelogModal } from "@/components/changelog/ChangelogModal";
 
 interface DashboardTopbarProps {
   onOpenCommandPalette: () => void;
@@ -41,16 +47,19 @@ export function DashboardTopbar({
   const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false);
   const [newMenuOpen, setNewMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [onboardingOpen, setOnboardingOpen] = useState(false);
+  const [docsOpen, setDocsOpen] = useState(false);
+  const [changelogOpen, setChangelogOpen] = useState(false);
   const userWorkspaceName = storedUser?.full_name
     ? `${storedUser.full_name}'s Workspace`
-    : "Default Workspace";
+    : "Acme Data Science Lab";
   const [activeProject, setActiveProject] = useState<string>("");
 
   useEffect(() => {
     setMounted(true);
     const user = getStoredUser();
     setStoredUser(user);
-    setActiveProject(user?.full_name ? `${user.full_name}'s Workspace` : "Default Workspace");
+    setActiveProject(user?.full_name ? `${user.full_name}'s Workspace` : "Acme Data Science Lab");
   }, []);
 
   const handleLogout = () => {
@@ -103,6 +112,24 @@ export function DashboardTopbar({
                   Local DuckDB &amp; Persistent Storage
                 </div>
               </div>
+              <div className="border-t border-[#E8E4DF] my-1 pt-1 space-y-0.5">
+                <Link
+                  href="/workspace"
+                  onClick={() => setWorkspaceMenuOpen(false)}
+                  className="w-full text-left px-2 py-1.5 rounded-lg text-xs hover:bg-[#FAF8F5] text-[#1E1915] flex items-center gap-2 font-medium"
+                >
+                  <Building2 className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>Workspace &amp; Team (9.1)</span>
+                </Link>
+                <Link
+                  href="/billing"
+                  onClick={() => setWorkspaceMenuOpen(false)}
+                  className="w-full text-left px-2 py-1.5 rounded-lg text-xs hover:bg-[#FAF8F5] text-[#1E1915] flex items-center gap-2 font-medium"
+                >
+                  <CreditCard className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Billing &amp; Quotas (15.1)</span>
+                </Link>
+              </div>
             </div>
           )}
         </div>
@@ -112,7 +139,7 @@ export function DashboardTopbar({
       <div className="flex-1 max-w-md hidden md:block">
         <button
           onClick={onOpenCommandPalette}
-          className="w-full flex items-center justify-between px-3.5 py-1.5 rounded-xl border border-[#E8E4DF] bg-white/70 hover:bg-white text-xs text-[#8C827A] shadow-2xs hover:shadow-xs transition-all group"
+          className="w-full flex items-center justify-between px-3.5 py-1.5 rounded-xl border border-[#E8E4DF] bg-white/70 hover:bg-white text-xs text-[#8C827A] shadow-2xs hover:shadow-xs transition-all group cursor-pointer"
         >
           <div className="flex items-center gap-2">
             <Search className="w-3.5 h-3.5 group-hover:text-[#0061FE] transition-colors" />
@@ -126,17 +153,46 @@ export function DashboardTopbar({
 
       {/* Right: Actions, Engine Pill, Jobs Drawer, User Profile */}
       <div className="flex items-center gap-2.5">
+        {/* Onboarding Walkthrough Trigger */}
+        <button
+          onClick={() => setOnboardingOpen(true)}
+          className="hidden md:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-[#E8E4DF] bg-white/80 hover:bg-white text-xs font-semibold text-[#1E1915] shadow-2xs transition-colors cursor-pointer"
+          title="Open interactive onboarding walkthrough (Pillar 18.1)"
+        >
+          <Sparkles className="w-3.5 h-3.5 text-[#0061FE]" />
+          <span>Guide</span>
+        </button>
+
+        {/* SDK & CLI Documentation Trigger */}
+        <button
+          onClick={() => setDocsOpen(true)}
+          className="hidden lg:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-[#E8E4DF] bg-white/80 hover:bg-white text-xs font-semibold text-[#1E1915] shadow-2xs transition-colors cursor-pointer"
+          title="Interactive Python SDK and CLI documentation (Pillar 18.3)"
+        >
+          <Code2 className="w-3.5 h-3.5 text-purple-600" />
+          <span>SDK</span>
+        </button>
+
+        {/* Release Notes / Changelog Trigger */}
+        <button
+          onClick={() => setChangelogOpen(true)}
+          className="hidden xl:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-[#E8E4DF] bg-white/80 hover:bg-white text-xs font-semibold text-[#1E1915] shadow-2xs transition-colors cursor-pointer"
+          title="Strata Changelog & Release Notes (Pillar 18.6)"
+        >
+          <History className="w-3.5 h-3.5 text-amber-600" />
+          <span>Changelog</span>
+        </button>
+
         {/* DuckDB Engine Status Pill */}
         <div
           title="DuckDB-WASM execution engine is warm and running in-memory with sub-second zero-cloud latency."
-          className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-[11px] font-mono cursor-default shadow-2xs"
+          className="hidden 2xl:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-[11px] font-mono cursor-default shadow-2xs"
         >
           <span className="relative flex h-2 w-2">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
             <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
           </span>
-          <span>DuckDB 1.5 · WASM Local</span>
-          <span className="text-[9px] text-emerald-600 border-l border-emerald-200 pl-1.5 ml-0.5">340MB</span>
+          <span>DuckDB 1.5</span>
         </div>
 
         {/* Quick "+ New" Dropdown */}
@@ -279,6 +335,10 @@ export function DashboardTopbar({
           )}
         </div>
       </div>
+
+      <OnboardingModal isOpen={onboardingOpen} onClose={() => setOnboardingOpen(false)} />
+      <SdkDocsModal isOpen={docsOpen} onClose={() => setDocsOpen(false)} />
+      <ChangelogModal isOpen={changelogOpen} onClose={() => setChangelogOpen(false)} />
     </header>
   );
 }
