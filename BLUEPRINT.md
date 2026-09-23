@@ -51,6 +51,8 @@ Version control and diffing form the immutable spine; the AI-native profiling an
 23. **In-App Code Interpreter & Conversational Data Analyst** *(New)*
 24. **AutoML, Feature Engineering & Predictive Diagnostics** *(New)*
 25. **Interactive Dashboards & Executive Storytelling** *(New)*
+26. **Post-Remediation Enhancements — Strengthening the Existing Suite** *(New — do after `fix.md` is complete)*
+27. **Extended Capabilities — Deliberately Out of Current Scope** *(New — long-term, evaluate later)*
 
 ---
 
@@ -331,6 +333,62 @@ Version control and diffing form the immutable spine; the AI-native profiling an
 
 ---
 
+### Pillar 26 — Post-Remediation Enhancements *(New)*
+*Sequencing note: every item in this pillar assumes `fix.md` is already fully done — real auth, real persistence, real LLM integration (Pillar 23 wired to Groq/Mistral/OpenRouter), real AutoML. These features are natural extensions of that work, not replacements for it. Do not start on this pillar until `fix.md`'s "Definition of done" checklist passes.*
+
+**26.1 Dataset Quality Score Trend (time-series quality tracking)**
+Today the quality/PII score (Pillar 4) is computed per-version, in isolation — you see "this version scored 87/100" but nothing about whether that's improving or degrading.
+- **How it works:** every time a new version is committed, the existing profiling job (Pillar 4.2–4.9) already computes a quality score. Instead of discarding the previous version's score, store `(dataset_id, version_id, quality_score, computed_at, subscore_breakdown_json)` as its own row, keyed to the version DAG parent pointer already in `dataset_versions`.
+- **Surface it as:** a line chart on the dataset detail page plotting quality score against commit history (x-axis = commits in DAG order, not wall-clock time, since branches complicate a pure timeline), with the subscore breakdown (completeness, PII exposure, duplication, schema stability) as stacked/selectable series.
+- **Why it matters:** this is the difference between "here's a snapshot" and "here's whether this pipeline is healthy" — it turns Strata from a passive scorer into something a data team would actually check before trusting a dataset for a model run. It's also a natural trigger for Pillar 14 (Notifications) — alert when quality drops more than N points between commits.
+- **Dependencies:** needs Pillar 2's version DAG (already exists) and B1's real Postgres persistence from `fix.md` (the quality scores need to survive restarts and be queryable historically, which in-memory dicts can't do).
+
+**26.2 AI-Generated Diff Narratives**
+Right now the diff engine (Pillar 3) produces structured output — schema changes, row deltas, distribution shifts — but a human still has to read the raw diff to understand what happened.
+- **How it works:** once the real LLM provider layer from `fix.md` Phase C exists, add a new call path: on every commit (or on-demand from the diff UI), feed the *structured diff JSON* (never raw row data — same zero-PII boundary as the conversational analyst) to the LLM with a prompt like "Given this dataset diff (schema changes, row/column deltas, distribution shifts), write a 1–3 sentence plain-English changelog entry a teammate could read without opening the tool."
+- **Where it's used:** auto-populate the commit message field as a *suggested* message (user can edit/accept, never silently auto-committed) when no message was provided via CLI/SDK; show it as a "What changed" summary line above the visual diff in the web UI.
+- **Why it matters:** most dataset version histories end up with commit messages like "update" or blank — this is the single highest-leverage, lowest-effort feature once the LLM layer exists, because it reuses data you're already computing (the diff) and a provider you're already paying for.
+- **Cost note:** tie this into the same daily-cap mechanism from `fix.md` C3 — diff narratives should count against the same quota as conversational-analyst calls, since both hit the same providers.
+
+**26.3 Dataset-to-Model Reproducibility & Drift Check**
+Strata already links models to the dataset version they were trained on (Pillar 6.6, Pillar 24.7) but nothing closes the loop by checking whether a model still performs the same way against a *newer* version of its training dataset.
+- **How it works:** add a "Check against current version" action on any registered model (Pillar 6.6). This re-runs the exact same AutoML pipeline configuration (feature list, preprocessing steps, model family/hyperparameters — all already stored per Pillar 24.7) against the dataset's current HEAD version instead of the version it was originally trained on, using the same Celery worker infra from `fix.md` B3.
+- **What it reports:** side-by-side metric comparison (original accuracy/F1/RMSE vs. re-run), plus a distribution-shift summary reusing the diff engine's statistical diff (Pillar 3.5) between the two dataset versions, so a metric drop can be visually attributed to a specific column's drift.
+- **Why it matters:** this is the thing DVC/MLflow don't do well — they track *that* a model used a dataset version, not *whether the relationship still holds*. It's a genuinely differentiated feature versus every competitor named in `PRODUCT.md`'s competitive landscape table, and it's cheap to build because it composes three things you'll already have (lineage links, AutoML pipeline, diff engine) rather than requiring new infrastructure.
+- **Dependencies:** Pillar 6 (lineage) + Pillar 24 (AutoML) + `fix.md` B3 (real async workers, since re-training can't block a request thread).
+
+**26.4 CI-Ready Diff Gating in the CLI/SDK**
+The CLI already supports `strata diff` (Pillar 8, Phase 1). Extend it into something a CI pipeline can act on, not just a human reading terminal output.
+- **How it works:** add `strata diff <version_a> <version_b> --fail-on schema-change,null-spike:5%,row-drop:10%` — a comma-separated list of rule types with thresholds. The command runs the existing diff engine, evaluates the structured result against the rule list, and exits non-zero (with a machine-readable JSON summary printed to stdout when `--json` is passed) if any rule is violated.
+- **Where it's used:** a GitHub Action / GitLab CI step in the *consumer's* pipeline (not Strata's own CI) — e.g., "before merging this PR that updates the upstream data source, run `strata diff main..upstream-refresh --fail-on schema-change` and block the merge if it fails."
+- **Why it matters:** this is what turns the SDK/CLI (Pillar 8) from "a way to pull data into notebooks" into "a real CI citizen," which is exactly the gap `PRODUCT.md` calls out in DVC (steep CLI learning curve, infrastructure-only) — you'd be offering DVC's CI-friendliness with Strata's richer diff semantics.
+- **Dependencies:** none beyond the existing diff engine — this is almost pure CLI/SDK work (Pillar 8) and can be built any time after Phase 1's diffing is real, though it makes most sense after `fix.md` since it should exercise the *real* diff engine, not a version still backed by in-memory state.
+
+---
+
+### Pillar 27 — Extended Capabilities, Deliberately Out of Current Scope *(New)*
+*These are bigger, higher-risk, or lower-priority than Pillar 26 — each has a real reason it's not queued yet. Documented here so the scope isn't lost, per this file's own "living scope document" rule, not because any of them should be started soon.*
+
+**27.1 Live External Database Querying (DuckDB scanner extensions)**
+DuckDB has first-class scanner extensions (`postgres_scanner`, `mysql_scanner`, `sqlite_scanner`) that let a query reach into a *live* external database as if it were a local table — no ETL/export step required.
+- **How it would work:** a user adds a read-only connection (host, port, credentials stored encrypted — reuse the encryption-at-rest work from `fix.md`/Pillar 16.1) to their own Postgres/MySQL instance. Strata's DuckDB engine attaches it via the relevant scanner extension, and the user can query it, diff it against a Strata-versioned snapshot, or pull a point-in-time export into a new Strata version — all through the same query/preview UI used for uploaded files.
+- **Why it's not in scope now:** `fix.md` Phase A2 requires *locking down* DuckDB's extension loading and external access specifically because it's a live security hole today (unauthenticated arbitrary SQL + unrestricted extensions = arbitrary file read / SSRF). This feature is the exact opposite ask — it *wants* controlled external access. It can only be built safely on top of a properly allowlisted, per-connection-scoped extension system, and it introduces a new credential-storage security surface (customer DB passwords) that needs its own threat model before any code is written.
+- **Rough sizing:** significant — new encrypted-credential storage, per-connection network egress rules, UI for connection management, and its own security review. Treat as a Phase 4+ item, not a quick add-on.
+
+**27.2 Data Contracts (schema & quality assertions that can block a commit)**
+`PRODUCT.md` explicitly positions Strata against Great Expectations ("requires users to know in advance what to check; no AI-native profiling or visual discovery"), but doesn't currently offer any way to *codify* expectations once they're discovered.
+- **How it would work:** a lightweight assertion layer, attachable per-dataset: e.g. `column "email" must match pattern`, `column "age" must be >= 0`, `row count must not drop more than 20% vs. parent version`, `schema must not remove a column without a major version bump`. Store contracts as versioned JSON/YAML alongside the dataset (their own row in Postgres, tied to `dataset_id`). On every new commit (web upload, CLI, SDK, or pipeline output — Pillar 7), run the contract checks as part of the existing profiling job (Pillar 4) *before* the version is finalized as HEAD; a violation either blocks the commit outright or lands it as a flagged/draft version requiring explicit override, depending on a per-contract severity setting.
+- **Why it's not in scope now:** this is a genuinely new product surface, not an extension of existing plumbing the way Pillar 26 is — it needs its own schema, its own UI for authoring rules, and a real design decision about *blocking* semantics (a hard block on ingestion is a much bigger behavioral commitment than a passive quality score). It's valuable, but it deserves to be scoped as its own mini-project once the core platform in `fix.md` is stable, not bolted on mid-remediation.
+- **Rough sizing:** medium-large. Natural to file as a Phase 4 blueprint item and design properly (rule DSL, storage schema, UI) before building.
+
+**27.3 Native Notebook Kernel Integration**
+The current plan (Pillar 12.1) covers a JupyterLab/VS Code *extension* that talks to the SDK — useful, but still a thin client around `strata.Dataset`. Hex and Deepnote's actual moat is a managed, collaborative notebook *environment* itself.
+- **How it would work:** either (a) a hosted Jupyter kernel gateway Strata manages, pre-authenticated against the user's workspace so `strata` datasets are available as local variables with zero setup, or (b) a real Jupyter kernel *extension* (not just an SDK wrapper) that adds Strata-aware magics (`%%strata_query`, cell-level lineage tracking so notebook cells themselves become lineage nodes per Pillar 6).
+- **Why it's not in scope now:** this is the single biggest lift in this whole document — it's effectively "build or host a notebook platform," which duplicates infrastructure Hex/Deepnote/Google Colab already run at scale, and it's explicitly called out as Phase 4 ("In-Browser Compute Environment," Pillar 13) in the existing roadmap for the same reason. Pillar 12.1's lighter extension approach gets most of the benefit (dataset access from notebooks) at a fraction of the cost, and should be the thing that ships first — this pillar is here so the *heavier* version of the idea isn't forgotten, not because it's next.
+- **Rough sizing:** large — likely its own multi-week initiative requiring infra decisions (managed kernels vs. local extension) before any feature work starts.
+
+---
+
 ## 5. Phased Roadmap
 
 ### Phase 0 — Proof of Concept (Weeks 1–3)
@@ -383,3 +441,16 @@ Version control and diffing form the immutable spine; the AI-native profiling an
 - [ ] In-browser zero-setup Jupyter compute environment (Pillar 13.1, 13.4)
 - [ ] Public dataset marketplace with creator monetization and dataset requests (Pillar 19)
 - [ ] Enterprise governance & catalog integration (Collibra/Alation sync, VPC deployments) (Pillar 20)
+- [ ] Data contracts — schema/quality assertions that can block a commit (Pillar 27.2)
+- [ ] Live external database querying via allowlisted DuckDB scanners (Pillar 27.1)
+- [ ] Native notebook kernel integration (Pillar 27.3)
+
+---
+
+### Phase 5 — Post-Remediation Enhancements
+**Gate: do not start this phase until every item in `fix.md` is done and its "Definition of done" checklist passes — real auth, real persistence, real LLM integration, real AutoML/SHAP. These features build directly on that being true; built on the current mocked state, they'd just be more surface area to redo.**
+
+- [ ] Dataset quality score trend — historical scoring stored per version, plotted against the commit DAG (Pillar 26.1)
+- [ ] AI-generated diff narratives — LLM-written plain-English changelogs from structured diff output, reusing the `fix.md` Phase C provider layer and daily-cap mechanism (Pillar 26.2)
+- [ ] Dataset-to-model reproducibility & drift check — re-run a registered model's exact pipeline against the dataset's current HEAD and report metric/distribution drift (Pillar 26.3)
+- [ ] CI-ready diff gating in the CLI (`strata diff --fail-on ...`) for use in consumers' own CI pipelines (Pillar 26.4)
