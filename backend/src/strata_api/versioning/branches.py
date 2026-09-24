@@ -3,6 +3,8 @@
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Set, Tuple
 from strata_api.versioning.registry import get_all_commits, get_commit_by_id, record_commit
+from strata_api.core.persistence import save_branch_to_db, delete_branch_from_db
+
 
 # In-memory storage for branches per dataset:
 # _branches_db[dataset_name][branch_name] = BranchRecord
@@ -38,6 +40,7 @@ def ensure_default_branches(dataset_name: str, head_commit_id: Optional[str] = N
             "ahead_count": 0,
             "behind_count": 0,
         }
+        save_branch_to_db(_branches_db[key]["main"], dataset_name, is_active=True)
 
     if "staging" not in _branches_db[key] and len(all_commits) > 1:
         _branches_db[key]["staging"] = {
@@ -53,6 +56,7 @@ def ensure_default_branches(dataset_name: str, head_commit_id: Optional[str] = N
             "ahead_count": 1,
             "behind_count": 0,
         }
+        save_branch_to_db(_branches_db[key]["staging"], dataset_name, is_active=False)
 
     if key not in _active_branch_db:
         _active_branch_db[key] = "main"
@@ -154,6 +158,7 @@ def create_branch(
         "behind_count": 0,
     }
     _branches_db[key][clean_name] = new_branch
+    save_branch_to_db(new_branch, dataset_name, is_active=False)
     return new_branch
 
 
@@ -168,6 +173,7 @@ def delete_branch(dataset_name: str, branch_name: str) -> bool:
     if _active_branch_db.get(key) == branch_name:
         _active_branch_db[key] = "main"
     del _branches_db[key][branch_name]
+    delete_branch_from_db(dataset_name, branch_name)
     return True
 
 
@@ -419,6 +425,11 @@ def execute_merge(
     key = _normalize_dataset_key(dataset_name)
     _branches_db[key][target_branch]["head_commit_id"] = merge_commit["id"]
     _branches_db[key][target_branch]["head_hash"] = merge_commit["hash"]
+    save_branch_to_db(
+        _branches_db[key][target_branch],
+        dataset_name,
+        is_active=(_active_branch_db.get(key) == target_branch),
+    )
 
     return {
         "message": f"Successfully merged '{source_branch}' into '{target_branch}'",

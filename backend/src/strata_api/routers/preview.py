@@ -3,9 +3,11 @@
 import os
 import shutil
 from typing import Optional
-from fastapi import APIRouter, File, UploadFile, HTTPException, Query
+from fastapi import APIRouter, Depends, File, UploadFile, HTTPException, Query
 import polars as pl
+from strata_api.models.user import UserModel
 from strata_api.parsers import get_parser_for_file
+from strata_api.routers.auth import get_current_user
 from strata_api.versioning.hashing import compute_content_hash
 from strata_api.profiling import compute_column_microstats, detect_pii_columns, calculate_quality_score
 from strata_api.core.duckdb_engine import get_duckdb_engine
@@ -18,7 +20,8 @@ router = APIRouter(prefix="/preview", tags=["Preview"])
 @router.post("", response_model=PreviewResponse)
 async def preview_uploaded_file(
     file: UploadFile = File(...),
-    sheet: Optional[str] = Query(None, description="Optional Excel sheet to parse")
+    sheet: Optional[str] = Query(None, description="Optional Excel sheet to parse"),
+    current_user: UserModel = Depends(get_current_user),
 ):
     """Upload any dataset file (CSV, Excel, Parquet, JSON, SDF) and receive instant schema, virtual rows, stats, and PII checks."""
     filename = file.filename or "uploaded_dataset"
@@ -29,9 +32,11 @@ async def preview_uploaded_file(
 
     from strata_api.routers.datasets import _datasets_db
 
-    # Check for existing duplicate content hash
+    # Check for existing duplicate content hash for this user
     for existing_id, existing_record in _datasets_db.items():
-        if existing_record.get("content_hash") == content_hash:
+        if existing_record.get("content_hash") == content_hash and (
+            not existing_record.get("owner_id") or existing_record.get("owner_id") == current_user.id
+        ):
             schema_fields = [ColumnSchema(**f) for f in existing_record.get("schema_fields", [])]
             return PreviewResponse(
                 filename=existing_record["filename"],
@@ -67,6 +72,7 @@ async def preview_uploaded_file(
             filename=filename,
             content_hash=content_hash,
             description=f"Uploaded {filename} via Universal Previewer",
+            owner_id=current_user.id,
         )
 
         parser = get_parser_for_file(stored_path)

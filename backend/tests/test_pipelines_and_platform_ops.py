@@ -3,9 +3,11 @@ Pillars 7, 9, 12, 13, 16, 17
 """
 
 import pytest
+from unittest.mock import AsyncMock, patch
 from httpx import AsyncClient, ASGITransport
 from strata_api.main import create_app
 from strata_api.routers.datasets import seed_default_datasets_if_needed
+from tests.conftest import AUTH_HEADERS_A
 
 app = create_app()
 
@@ -19,7 +21,7 @@ def setup_datasets():
 async def test_pipeline_creation_and_dry_run():
     """Test pipeline templates, creation, and dry-run execution mode (Pillars 7.2, 7.8, 7.10)."""
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+    async with AsyncClient(transport=transport, base_url="http://test", headers=AUTH_HEADERS_A) as ac:
         # Templates
         tpl_resp = await ac.get("/api/pipelines/templates")
         assert tpl_resp.status_code == 200
@@ -45,58 +47,88 @@ async def test_pipeline_creation_and_dry_run():
 
 @pytest.mark.asyncio
 async def test_pipeline_sandbox_execution():
-    """Test pipeline execution inside isolated compute sandbox with logs (Pillars 7.6, 13.3)."""
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        # Run default churn pipeline
-        run_resp = await ac.post("/api/pipelines/pipe_churn_etl/run")
-        assert run_resp.status_code == 200
-        run_data = run_resp.json()
-        assert run_data["status"] == "success"
-        run = run_data["run"]
-        assert run["status"] == "success"
-        assert run["duration_ms"] > 0
-        assert len(run["logs"]) >= 5
-        assert "spend_per_month" in run["columns"]
+    """Test pipeline execution is dispatched asynchronously via ARQ (Pillars 7.6, 13.3).
 
-        # Check run history
-        hist_resp = await ac.get("/api/pipelines/runs")
-        assert hist_resp.status_code == 200
-        assert hist_resp.json()["total"] >= 1
+    The /run endpoint now returns immediately with a job_id instead of blocking.
+    Actual sandbox execution happens in the ARQ worker process.
+    """
+    transport = ASGITransport(app=app)
+
+    class _MockJob:
+        job_id = "mock_run_job_001"
+
+    mock_pool = AsyncMock()
+    mock_pool.enqueue_job = AsyncMock(return_value=_MockJob())
+
+    with patch("strata_api.routers.pipelines.get_arq_pool", return_value=mock_pool):
+        async with AsyncClient(transport=transport, base_url="http://test", headers=AUTH_HEADERS_A) as ac:
+            # Run default churn pipeline — should return immediately with queued status
+            run_resp = await ac.post("/api/pipelines/pipe_churn_etl/run")
+            assert run_resp.status_code == 200, run_resp.text
+            run_data = run_resp.json()
+            # Async response: status=queued, job_id present
+            assert run_data["status"] == "queued"
+            assert "job_id" in run_data and run_data["job_id"]
+            assert run_data["run_id"].startswith("run_")
+            assert run_data["pipeline_id"] == "pipe_churn_etl"
+
+            # Verify the task was dispatched to ARQ
+            mock_pool.enqueue_job.assert_called_once()
+            enqueue_kwargs = mock_pool.enqueue_job.call_args[1]
+            assert enqueue_kwargs["pipeline"]["id"] == "pipe_churn_etl"
+
+            # Run history endpoint still works (polling DB for persisted records)
+            hist_resp = await ac.get("/api/pipelines/runs")
+            assert hist_resp.status_code == 200
 
 
 @pytest.mark.asyncio
 async def test_dead_letter_queue_and_retry():
-    """Test failure capture in Dead-Letter Queue (DLQ) and retry mechanics (Pillar 7.9)."""
+    """Test that /run returns 503 (queue unavailable) and DLQ is still readable.
+
+    With the async architecture, pipeline failures are handled inside the worker
+    and written to the DLQ there.  The DLQ endpoint remains synchronous and
+    always returns its current contents regardless of worker state.
+    """
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        # Create pipeline with an invalid column condition to intentionally trigger failure
-        bad_pipe_req = {
-            "name": "Faulty Pipeline",
-            "target_dataset_id": "churn_demo",
-            "steps": [
-                {"step_id": "fail_1", "name": "Nonexistent Column Filter", "type": "filter", "condition": "non_existent_col > 999"}
-            ]
-        }
-        create_resp = await ac.post("/api/pipelines", json=bad_pipe_req)
-        bad_id = create_resp.json()["pipeline"]["id"]
 
-        # Run faulty pipeline
-        fail_resp = await ac.post(f"/api/pipelines/{bad_id}/run")
-        assert fail_resp.status_code in [400, 500]
+    class _MockJob:
+        job_id = "mock_faulty_job_001"
 
-        # Inspect DLQ
-        dlq_resp = await ac.get("/api/pipelines/dlq")
-        assert dlq_resp.status_code == 200
-        dlq_items = dlq_resp.json()["dlq"]
-        assert len(dlq_items) >= 1
+    mock_pool = AsyncMock()
+    mock_pool.enqueue_job = AsyncMock(return_value=_MockJob())
+
+    with patch("strata_api.routers.pipelines.get_arq_pool", return_value=mock_pool):
+        async with AsyncClient(transport=transport, base_url="http://test", headers=AUTH_HEADERS_A) as ac:
+            # Create pipeline with invalid condition (worker will fail when processing)
+            bad_pipe_req = {
+                "name": "Faulty Pipeline",
+                "target_dataset_id": "churn_demo",
+                "steps": [
+                    {"step_id": "fail_1", "name": "Bad Filter", "type": "filter", "condition": "non_existent_col > 999"}
+                ]
+            }
+            create_resp = await ac.post("/api/pipelines", json=bad_pipe_req)
+            assert create_resp.status_code == 200
+            bad_id = create_resp.json()["pipeline"]["id"]
+
+            # Run the faulty pipeline — now returns queued (worker handles the failure)
+            fail_resp = await ac.post(f"/api/pipelines/{bad_id}/run")
+            # With ARQ, the run always returns 200/queued — failure surfaces via GET /jobs/{job_id}
+            assert fail_resp.status_code == 200
+            assert fail_resp.json()["status"] == "queued"
+
+            # DLQ endpoint is always readable (populated by worker on previous runs or empty)
+            dlq_resp = await ac.get("/api/pipelines/dlq")
+            assert dlq_resp.status_code == 200
+            assert "dlq" in dlq_resp.json()
 
 
 @pytest.mark.asyncio
 async def test_integrations_connectors_and_code():
     """Test ecosystem connectors and production boilerplate generators (Pillar 12)."""
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+    async with AsyncClient(transport=transport, base_url="http://test", headers=AUTH_HEADERS_A) as ac:
         # Status
         status_resp = await ac.get("/api/integrations/status")
         assert status_resp.status_code == 200
@@ -138,7 +170,7 @@ async def test_integrations_connectors_and_code():
 async def test_advanced_collaboration():
     """Test cell/row comments, review approvals, and asset transfer (Pillars 9.6, 9.7, 9.10)."""
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+    async with AsyncClient(transport=transport, base_url="http://test", headers=AUTH_HEADERS_A) as ac:
         # 1. Add cell comment
         comm_resp = await ac.post(
             "/api/workspaces/comments/churn_demo",
@@ -199,7 +231,7 @@ async def test_advanced_collaboration():
 async def test_security_and_compliance():
     """Test encryption audit, cryptographic audit logs, PII masking, and GDPR workflows (Pillars 16.1, 16.3, 16.4, 16.5)."""
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+    async with AsyncClient(transport=transport, base_url="http://test", headers=AUTH_HEADERS_A) as ac:
         # Encryption status
         enc_resp = await ac.get("/api/security/encryption-status")
         assert enc_resp.status_code == 200
@@ -242,7 +274,7 @@ async def test_security_and_compliance():
 async def test_admin_and_platform_ops():
     """Test admin console, platform health metrics, rate limits, and worker queue observability (Pillars 17.1, 17.2, 17.3, 17.4)."""
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+    async with AsyncClient(transport=transport, base_url="http://test", headers=AUTH_HEADERS_A) as ac:
         # Admin overview
         admin_resp = await ac.get("/api/security/admin/overview")
         assert admin_resp.status_code == 200

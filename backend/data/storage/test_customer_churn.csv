@@ -1,0 +1,15 @@
+customer_id,customer_name,email,country,tenure_months,monthly_charges,total_spend,churn_probability,churned
+CUST-1001,Customer 1,user_1@example.com,Germany,3,89.2,267.6,0.78,Yes
+CUST-1002,Customer 2,user_2@example.com,United Kingdom,45,45.0,2025.0,0.05,No
+CUST-1003,Customer 3,user_3@example.com,United States,8,110.4,883.2,0.65,Yes
+CUST-1004,Customer 4,user_4@example.com,Germany,60,75.8,4548.0,0.08,No
+CUST-1005,Customer 5,user_5@example.com,United Kingdom,12,65.5,786.0,0.12,No
+CUST-1006,Customer 6,user_6@example.com,United States,3,89.2,267.6,0.78,Yes
+CUST-1007,Customer 7,user_7@example.com,Germany,45,45.0,2025.0,0.05,No
+CUST-1008,Customer 8,user_8@example.com,United Kingdom,8,110.4,883.2,0.65,Yes
+CUST-1009,Customer 9,user_9@example.com,United States,60,75.8,4548.0,0.08,No
+CUST-1010,Customer 10,user_10@example.com,Germany,12,65.5,786.0,0.12,No
+CUST-1011,Customer 11,user_11@example.com,United Kingdom,3,89.2,267.6,0.78,Yes
+CUST-1012,Customer 12,user_12@example.com,United States,45,45.0,2025.0,0.05,No
+CUST-1013,Customer 13,user_13@example.com,Germany,8,110.4,883.2,0.65,Yes
+CUST-1014,Customer 14,user_14@example.com,United Kingdom,60,75.8,4548.0,0.08,No

@@ -61,7 +61,7 @@ In `routers/auth.py`:
 
 ## Phase B — Real persistence (no more in-memory dicts)
 
-### B1. Migrate every in-memory store to Postgres
+### B1. Migrate every in-memory store to Postgres or sqlite3(for development)   
 Replace all of the following module-level globals with real SQLAlchemy models + database-backed CRUD:
 `_datasets_db`, `_shared_links` (datasets.py) · `_audit_trail` (security.py) · `_webhook_configs`, `_integration_events` (integrations.py) · `_workspaces_db`, `_members_db`, `_invitations_db`, `_dataset_permissions_db`, `_activity_feed_db`, `_dataset_comments_db`, `_review_requests_db` (collaboration.py) · `_favorites_set`, `_recents_history` (discovery.py) · `_models_db` (lineage.py) · `_pipelines_db`, `_pipeline_runs`, `_dead_letter_queue` (pipelines.py) · `_branches_db`, `_active_branch_db` (versioning/branches.py) · `_commits` (versioning/registry.py) · `_showcase_registry`, `_user_starred_showcase` (showcase.py).
 - The existing `DatasetModel`/`VersionModel` in `models/dataset.py` are unused — either build on them or replace them with a corrected schema, but every dataset/version operation must go through the DB, not a Python dict.

@@ -148,6 +148,14 @@ def execute_transformations(
                 except Exception:
                     pass
 
+        elif op.op in ("custom_code", "python", "python_script", "script"):
+            from strata_api.core.sandbox import run_sandboxed_code, validate_safe_code
+
+            code_to_run = op.code or (op.value if isinstance(op.value, str) else "")
+            validate_safe_code(code_to_run)
+            transformed_df = run_sandboxed_code(code_to_run, transformed_df)
+            code_lines.append(f"# Custom Python transformation\n{code_to_run}")
+
     code_lines.append("")
     code_lines.append("# Save cleaned dataset")
     code_lines.append("df.write_parquet('cleaned_dataset.parquet')")

@@ -5,14 +5,16 @@ import secrets
 import hashlib
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 import polars as pl
 import pandas as pd
 
 from strata_api.config import settings
 from strata_api.core.duckdb_engine import get_duckdb_engine
+from strata_api.models.user import UserModel
 from strata_api.parsers import get_parser_for_file
 from strata_api.profiling import compute_column_microstats, detect_pii_columns, calculate_quality_score
+from strata_api.routers.auth import get_current_user
 from strata_api.schemas.dataset import (
     DatasetCreate,
     DatasetResponse,
@@ -22,6 +24,11 @@ from strata_api.schemas.dataset import (
 )
 from strata_api.schemas.preview import PreviewResponse, ColumnSchema
 from strata_api.transforms.engine import execute_transformations
+from strata_api.core.persistence import (
+    save_dataset_to_db,
+    delete_dataset_from_db,
+    save_share_link_to_db,
+)
 
 router = APIRouter(prefix="/datasets", tags=["Datasets"])
 
@@ -29,6 +36,38 @@ router = APIRouter(prefix="/datasets", tags=["Datasets"])
 _datasets_db: Dict[str, Dict[str, Any]] = {}
 # In-memory registry mapping share_token -> dataset_id
 _shared_links: Dict[str, Dict[str, Any]] = {}
+
+
+def user_has_dataset_access(dataset: Dict[str, Any], user_id: str) -> bool:
+    """Return True if user owns or has access to dataset, False otherwise."""
+    owner_id = dataset.get("owner_id")
+    if owner_id and owner_id != user_id:
+        return False
+    return True
+
+
+def check_dataset_access(dataset: Dict[str, Any], user_id: str) -> None:
+    """Verify that the user owns or has access to this dataset; raise 403 Forbidden otherwise."""
+    if not user_has_dataset_access(dataset, user_id):
+        raise HTTPException(
+            status_code=403,
+            detail="Forbidden: You do not have access to this dataset.",
+        )
+
+
+def find_dataset_by_name_or_id(identifier: str) -> Optional[Dict[str, Any]]:
+    """Look up a dataset by id, filename, view_name, or content hash."""
+    if identifier in _datasets_db:
+        return _datasets_db[identifier]
+    for d in _datasets_db.values():
+        if (
+            d.get("name") == identifier
+            or d.get("filename") == identifier
+            or d.get("content_hash", "").startswith(identifier)
+            or d.get("view_name") == identifier
+        ):
+            return d
+    return None
 
 
 def get_storage_dir() -> str:
@@ -45,6 +84,8 @@ def register_dataset_in_store(
     description: Optional[str] = None,
     tags: Optional[List[str]] = None,
     custom_id: Optional[str] = None,
+    owner_id: Optional[str] = None,
+    workspace_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Parse dataset file, register with DuckDB, and track in _datasets_db."""
     dataset_id = custom_id or content_hash[:12]
@@ -77,6 +118,8 @@ def register_dataset_in_store(
 
     record = {
         "id": dataset_id,
+        "owner_id": owner_id,
+        "workspace_id": workspace_id,
         "name": filename.rsplit(".", 1)[0].replace("_", " ").title(),
         "filename": filename,
         "file_path": file_path,
@@ -103,6 +146,7 @@ def register_dataset_in_store(
     }
 
     _datasets_db[dataset_id] = record
+    save_dataset_to_db(record)
 
     # Track in immutable version DAG
     try:
@@ -129,10 +173,12 @@ def seed_default_datasets_if_needed():
 
 
 @router.get("", response_model=List[DatasetResponse])
-async def list_datasets():
-    """List all registered datasets."""
+async def list_datasets(current_user: UserModel = Depends(get_current_user)):
+    """List all registered datasets owned by or accessible to current user."""
     items = []
     for r in _datasets_db.values():
+        if r.get("owner_id") and r["owner_id"] != current_user.id:
+            continue
         items.append(DatasetResponse(
             id=r["id"],
             name=r["name"],
@@ -163,11 +209,17 @@ async def search_datasets(
     min_rows: Optional[int] = Query(None, description="Minimum total rows"),
     max_rows: Optional[int] = Query(None, description="Maximum total rows"),
     sort_by: str = Query("recent", description="Sort by: recent, quality, size, name, rows"),
+    current_user: UserModel = Depends(get_current_user),
 ):
-    """Global full-text, schema-based, and faceted search across datasets."""
+    """Global full-text, schema-based, and faceted search across user's datasets."""
     results = []
 
-    for r in _datasets_db.values():
+    user_datasets = [
+        r for r in _datasets_db.values()
+        if not r.get("owner_id") or r["owner_id"] == current_user.id
+    ]
+
+    for r in user_datasets:
         matched_reasons = []
 
         # 1. Full-text search matching
@@ -260,7 +312,7 @@ async def search_datasets(
     # Compute facet statistics
     all_formats = {}
     all_tags = {}
-    for d in _datasets_db.values():
+    for d in user_datasets:
         fmt = d.get("format", "unknown").lower()
         all_formats[fmt] = all_formats.get(fmt, 0) + 1
         for t in d.get("tags", []):
@@ -274,29 +326,32 @@ async def search_datasets(
         "facets": {
             "formats": all_formats,
             "tags": dict(sorted(all_tags.items(), key=lambda x: x[1], reverse=True)[:15]),
-            "total_indexed": len(_datasets_db),
+            "total_indexed": len(user_datasets),
         }
     }
 
 
 @router.delete("")
-async def clear_all_datasets():
-    """Clear all datasets and reset commit history."""
-    from strata_api.versioning.registry import clear_commits
-    for record in list(_datasets_db.values()):
-        file_path = record.get("file_path", "")
-        if file_path and os.path.exists(file_path):
-            try:
-                os.remove(file_path)
-            except Exception:
-                pass
-    _datasets_db.clear()
-    clear_commits()
-    return {"message": "All datasets and commits cleared successfully."}
+async def clear_all_datasets(current_user: UserModel = Depends(get_current_user)):
+    """Clear all datasets owned by the current user."""
+    to_delete = [
+        k for k, r in _datasets_db.items()
+        if not r.get("owner_id") or r["owner_id"] == current_user.id
+    ]
+    for dataset_id in to_delete:
+        record = _datasets_db.pop(dataset_id, None)
+        if record:
+            file_path = record.get("file_path", "")
+            if file_path and os.path.exists(file_path):
+                try:
+                    os.remove(file_path)
+                except Exception:
+                    pass
+    return {"message": "User datasets cleared successfully."}
 
 
 @router.post("/seed")
-async def seed_demo_datasets():
+async def seed_demo_datasets(current_user: UserModel = Depends(get_current_user)):
     """No-op: All datasets are user-uploaded in production."""
     return {"message": "Preseeded demo datasets disabled. Upload your datasets via /datasets/upload or database connectors."}
 
@@ -305,6 +360,7 @@ async def seed_demo_datasets():
 async def get_dataset_preview(
     dataset_id: str,
     sheet: Optional[str] = Query(None, description="Optional Excel sheet name to view"),
+    current_user: UserModel = Depends(get_current_user),
 ):
     """Retrieve full preview, virtual rows, schema, and column micro-stats for a dataset."""
     record = _datasets_db.get(dataset_id)
@@ -317,6 +373,8 @@ async def get_dataset_preview(
 
     if not record:
         raise HTTPException(status_code=404, detail=f"Dataset with ID '{dataset_id}' not found.")
+
+    check_dataset_access(record, current_user.id)
 
     file_path = record.get("file_path")
     if not file_path or not os.path.exists(file_path):
@@ -394,11 +452,14 @@ async def get_dataset_preview(
 
 
 @router.delete("/{dataset_id}")
-async def delete_dataset(dataset_id: str):
+async def delete_dataset(dataset_id: str, current_user: UserModel = Depends(get_current_user)):
     """Delete a dataset from registry and disk."""
     if dataset_id not in _datasets_db:
         raise HTTPException(status_code=404, detail="Dataset not found")
-    record = _datasets_db.pop(dataset_id)
+    record = _datasets_db[dataset_id]
+    check_dataset_access(record, current_user.id)
+    _datasets_db.pop(dataset_id)
+    delete_dataset_from_db(dataset_id)
     if os.path.exists(record.get("file_path", "")):
         try:
             os.remove(record["file_path"])
@@ -411,6 +472,7 @@ async def delete_dataset(dataset_id: str):
 async def transform_dataset(
     dataset_id: str,
     req: DatasetTransformRequest,
+    current_user: UserModel = Depends(get_current_user),
 ):
     """Execute point-and-click wrangling operations on a dataset, auto-committing a new immutable version."""
     record = _datasets_db.get(dataset_id)
@@ -421,6 +483,19 @@ async def transform_dataset(
                 break
     if not record:
         raise HTTPException(status_code=404, detail=f"Dataset {dataset_id} not found")
+
+    check_dataset_access(record, current_user.id)
+
+    # Validate operations before execution to block unsafe code
+    from strata_api.core.sandbox import validate_safe_code
+
+    for op in req.operations:
+        code_to_check = op.code or (op.value if op.op in ("custom_code", "python", "python_script", "script") and isinstance(op.value, str) else None)
+        if code_to_check:
+            try:
+                validate_safe_code(code_to_check)
+            except ValueError as val_err:
+                raise HTTPException(status_code=400, detail=str(val_err))
 
     file_path = record["file_path"]
     if not os.path.exists(file_path):
@@ -550,7 +625,7 @@ async def transform_dataset(
 
 
 @router.post("/{dataset_id}/share", response_model=ShareResponse)
-async def create_share_link(dataset_id: str):
+async def create_share_link(dataset_id: str, current_user: UserModel = Depends(get_current_user)):
     """Generate a shareable read-only public preview token."""
     record = _datasets_db.get(dataset_id)
     if not record:
@@ -561,12 +636,15 @@ async def create_share_link(dataset_id: str):
     if not record:
         raise HTTPException(status_code=404, detail="Dataset not found")
 
+    check_dataset_access(record, current_user.id)
+
     token = secrets.token_urlsafe(16)
     created_at = datetime.now(timezone.utc).isoformat()
     _shared_links[token] = {
         "dataset_id": record["id"],
         "created_at": created_at,
     }
+    save_share_link_to_db(token, record["id"], created_at)
 
     return ShareResponse(
         share_token=token,
@@ -576,6 +654,8 @@ async def create_share_link(dataset_id: str):
     )
 
 
+# PUBLIC ENDPOINT: Scoped access check via cryptographically secure, unguessable share token.
+# Public visitors can preview shared datasets without an active user session, provided the token exists and is valid.
 @router.get("/shared/{token}", response_model=PreviewResponse)
 async def get_shared_dataset(token: str):
     """Retrieve read-only dataset preview using a public share token."""
@@ -609,6 +689,7 @@ async def get_shared_dataset(token: str):
 async def convert_dataset_format(
     dataset_id: str,
     target_format: str = Query(..., description="Target format: csv, parquet, excel, json"),
+    current_user: UserModel = Depends(get_current_user),
 ):
     """Convert any registered dataset to CSV, Parquet, Excel (.xlsx), or JSON on the fly."""
     import io
@@ -622,6 +703,8 @@ async def convert_dataset_format(
                 break
     if not record:
         raise HTTPException(status_code=404, detail=f"Dataset {dataset_id} not found")
+
+    check_dataset_access(record, current_user.id)
 
     file_path = record["file_path"]
     fmt = record.get("format", "").lower()

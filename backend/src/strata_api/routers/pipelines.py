@@ -9,12 +9,27 @@ import json
 import traceback
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Any
-from fastapi import APIRouter, HTTPException, Query, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
 from pydantic import BaseModel, Field
 
-from strata_api.routers.datasets import _datasets_db, get_storage_dir, seed_default_datasets_if_needed
+from strata_api.models.user import UserModel
+from strata_api.routers.auth import get_current_user
+from strata_api.routers.datasets import (
+    _datasets_db,
+    get_storage_dir,
+    seed_default_datasets_if_needed,
+    check_dataset_access,
+    find_dataset_by_name_or_id,
+)
+from strata_api.core.persistence import (
+    save_pipeline_to_db,
+    save_pipeline_run_to_db,
+    save_dead_letter_job_to_db,
+)
+from strata_api.core.arq_pool import get_arq_pool
 
 router = APIRouter(prefix="/pipelines", tags=["Pipelines & Compute Sandboxes"])
+
 
 # In-memory storage for pipelines, run history, and dead-letter queue
 _pipelines_db: Dict[str, Dict[str, Any]] = {}
@@ -54,11 +69,27 @@ PIPELINE_TEMPLATES = [
 class PipelineStep(BaseModel):
     step_id: str
     name: str
-    type: str  # filter, expression, conditional, quantile_clip, impute
+    type: str  # filter, expression, conditional, quantile_clip, impute, python, python_script, custom
     condition: Optional[str] = None
     expr: Optional[str] = None
     output_col: Optional[str] = None
     columns: Optional[List[str]] = None
+    code: Optional[str] = None
+    script: Optional[str] = None
+
+
+def _validate_pipeline_steps(steps: List[PipelineStep]) -> None:
+    """Validate all pipeline steps against AST security policy."""
+    from strata_api.core.sandbox import validate_safe_code
+
+    for s in steps:
+        candidates = [s.code, s.script, s.condition, s.expr]
+        for c in candidates:
+            if c and isinstance(c, str) and c.strip():
+                try:
+                    validate_safe_code(c)
+                except ValueError as err:
+                    raise HTTPException(status_code=400, detail=f"Unsafe code detected in step '{s.name}': {err}")
 
 
 class PipelineCreateRequest(BaseModel):
@@ -171,7 +202,14 @@ def _execute_pipeline_in_sandbox(pipe: Dict[str, Any], dry_run: bool = False, li
                         q99 = df[c].quantile(0.99)
                         if q99 is not None:
                             df = df.with_columns(pl.when(pl.col(c) > q99).then(q99).otherwise(pl.col(c)).alias(c))
-            
+            elif step_type in ("python", "python_script", "script", "custom"):
+                from strata_api.core.sandbox import run_sandboxed_code, validate_safe_code
+
+                code_to_run = step.get("code") or step.get("script") or step.get("expr") or ""
+                validate_safe_code(code_to_run)
+                timeout_s = pipe.get("timeout_seconds", 30) or 30
+                df = run_sandboxed_code(code_to_run, df, timeout_seconds=float(timeout_s))
+
             logs.append(f"[{datetime.now(timezone.utc).strftime('%H:%M:%S')}] Step {idx+1} completed successfully.")
         except Exception as step_err:
             logs.append(f"[{datetime.now(timezone.utc).strftime('%H:%M:%S')}] ERROR in Step {idx+1}: {str(step_err)}")
@@ -200,23 +238,35 @@ def _execute_pipeline_in_sandbox(pipe: Dict[str, Any], dry_run: bool = False, li
 # ---------------------------------------------------------------------------
 
 @router.get("")
-async def list_pipelines():
-    """List all registered ETL pipelines (Pillar 7.5)."""
-    return {"pipelines": list(_pipelines_db.values()), "total": len(_pipelines_db)}
+async def list_pipelines(current_user: UserModel = Depends(get_current_user)):
+    """List all registered ETL pipelines for current user (Pillar 7.5)."""
+    user_pipes = [p for p in _pipelines_db.values() if not p.get("owner_id") or p["owner_id"] == current_user.id]
+    return {"pipelines": user_pipes, "total": len(user_pipes)}
 
 
 @router.get("/templates")
-async def get_pipeline_templates():
+async def get_pipeline_templates(current_user: UserModel = Depends(get_current_user)):
     """List reusable pipeline templates for feature engineering and ETL (Pillar 7.8)."""
     return {"templates": PIPELINE_TEMPLATES}
 
 
 @router.post("")
-async def create_pipeline(req: PipelineCreateRequest):
+async def create_pipeline(
+    req: PipelineCreateRequest,
+    current_user: UserModel = Depends(get_current_user),
+):
     """Register a new scheduled or event-driven pipeline (Pillars 7.2, 7.4)."""
+    _validate_pipeline_steps(req.steps)
+
+    if req.target_dataset_id:
+        ds = find_dataset_by_name_or_id(req.target_dataset_id)
+        if ds:
+            check_dataset_access(ds, current_user.id)
+
     pipe_id = f"pipe_{uuid.uuid4().hex[:8]}"
     pipeline_obj = {
         "id": pipe_id,
+        "owner_id": current_user.id,
         "name": req.name,
         "description": req.description,
         "target_dataset_id": req.target_dataset_id,
@@ -230,12 +280,22 @@ async def create_pipeline(req: PipelineCreateRequest):
         "last_status": "never_run",
     }
     _pipelines_db[pipe_id] = pipeline_obj
+    save_pipeline_to_db(pipeline_obj)
     return {"status": "created", "pipeline": pipeline_obj}
 
 
 @router.post("/dry-run")
-async def pipeline_dry_run(req: DryRunRequest):
+async def pipeline_dry_run(
+    req: DryRunRequest,
+    current_user: UserModel = Depends(get_current_user),
+):
     """Dry-run execution mode with sample output previews before committing changes (Pillar 7.10)."""
+    _validate_pipeline_steps(req.steps)
+
+    ds = find_dataset_by_name_or_id(req.dataset_id)
+    if ds:
+        check_dataset_access(ds, current_user.id)
+
     virtual_pipe = {
         "target_dataset_id": req.dataset_id,
         "steps": [s.model_dump() for s in req.steps],
@@ -250,74 +310,59 @@ async def pipeline_dry_run(req: DryRunRequest):
 
 
 @router.post("/{pipeline_id}/run")
-async def run_pipeline(pipeline_id: str):
-    """Execute pipeline in ephemeral isolated compute sandbox (Pillars 13.3, 7.6)."""
+async def run_pipeline(
+    pipeline_id: str,
+    current_user: UserModel = Depends(get_current_user),
+):
+    """Enqueue a pipeline execution job via ARQ.
+
+    Returns immediately with a ``job_id``.
+    Poll ``GET /api/jobs/{job_id}`` for status and the full run result.
+    """
     pipe = _pipelines_db.get(pipeline_id)
     if not pipe:
         raise HTTPException(status_code=404, detail="Pipeline not found")
 
-    run_id = f"run_{uuid.uuid4().hex[:8]}"
-    start_iso = datetime.now(timezone.utc).isoformat()
+    if pipe.get("owner_id") and pipe["owner_id"] != current_user.id:
+        raise HTTPException(status_code=403, detail="Forbidden: You do not have access to this pipeline.")
 
-    try:
-        execution_res = _execute_pipeline_in_sandbox(pipe, dry_run=False)
-        run_record = {
-            "run_id": run_id,
-            "pipeline_id": pipeline_id,
-            "pipeline_name": pipe["name"],
-            "status": "success",
-            "started_at": start_iso,
-            "completed_at": datetime.now(timezone.utc).isoformat(),
-            "duration_ms": execution_res["duration_ms"],
-            "input_rows": execution_res["input_rows"],
-            "output_rows": execution_res["output_rows"],
-            "output_columns": execution_res["output_columns"],
-            "columns": execution_res["columns_list"],
-            "sample_preview": execution_res["sample_preview"],
-            "logs": execution_res["logs"],
-        }
-        pipe["last_run_at"] = run_record["completed_at"]
-        pipe["last_status"] = "success"
-        _pipeline_runs[run_id] = run_record
-
-        return {"status": "success", "run": run_record}
-    except Exception as e:
-        err_msg = str(e)
-        stack = traceback.format_exc()
-        run_record = {
-            "run_id": run_id,
-            "pipeline_id": pipeline_id,
-            "pipeline_name": pipe["name"],
-            "status": "failed",
-            "error": err_msg,
-            "started_at": start_iso,
-            "completed_at": datetime.now(timezone.utc).isoformat(),
-            "logs": [f"Execution failed: {err_msg}", stack],
-        }
-        pipe["last_run_at"] = run_record["completed_at"]
-        pipe["last_status"] = "failed"
-        _pipeline_runs[run_id] = run_record
-
-        # Enqueue into Dead-Letter Queue (Pillar 7.9)
-        dlq_entry = {
-            "dlq_id": f"dlq_{uuid.uuid4().hex[:8]}",
-            "run_id": run_id,
-            "pipeline_id": pipeline_id,
-            "error": err_msg,
-            "timestamp": run_record["completed_at"],
-            "retry_count": 0,
-            "resolved": False,
-        }
-        _dead_letter_queue.append(dlq_entry)
-
+    pool = get_arq_pool()
+    if pool is None:
         raise HTTPException(
-            status_code=500,
-            detail=f"Pipeline execution failed: {err_msg}. Enqueued into Dead-Letter Queue (DLQ).",
+            status_code=503,
+            detail=(
+                "Background job queue unavailable: Redis is not connected. "
+                "Start Redis (docker-compose up redis) and restart the API."
+            ),
         )
+
+    run_id = f"run_{uuid.uuid4().hex[:8]}"
+
+    # Enqueue the heavy execution into the ARQ worker
+    job = await pool.enqueue_job(
+        "run_pipeline_task",
+        pipeline=pipe,
+        run_id=run_id,
+    )
+
+    return {
+        "status": "queued",
+        "job_id": job.job_id,
+        "run_id": run_id,
+        "pipeline_id": pipeline_id,
+        "pipeline_name": pipe["name"],
+        "message": (
+            f"Pipeline '{pipe['name']}' execution queued. "
+            f"Poll GET /api/jobs/{job.job_id} for status and result."
+        ),
+    }
 
 
 @router.get("/runs")
-async def list_pipeline_runs(pipeline_id: Optional[str] = Query(None)):
+async def list_pipeline_runs(
+    pipeline_id: Optional[str] = Query(None),
+    current_user: UserModel = Depends(get_current_user),
+):
     """List execution history across pipelines (Pillar 7.6)."""
     runs = list(_pipeline_runs.values())
     if pipeline_id:
@@ -327,13 +372,13 @@ async def list_pipeline_runs(pipeline_id: Optional[str] = Query(None)):
 
 
 @router.get("/dlq")
-async def get_dead_letter_queue():
+async def get_dead_letter_queue(current_user: UserModel = Depends(get_current_user)):
     """Observability into the Dead-Letter Queue for failed jobs (Pillar 7.9)."""
     return {"dlq": _dead_letter_queue, "total_failed": len(_dead_letter_queue)}
 
 
 @router.post("/dlq/{dlq_id}/retry")
-async def retry_dlq_job(dlq_id: str):
+async def retry_dlq_job(dlq_id: str, current_user: UserModel = Depends(get_current_user)):
     """Trigger automated retry on a failed DLQ job (Pillar 7.9)."""
     entry = next((e for e in _dead_letter_queue if e["dlq_id"] == dlq_id), None)
     if not entry:
@@ -344,9 +389,15 @@ async def retry_dlq_job(dlq_id: str):
     if not pipe:
         raise HTTPException(status_code=404, detail="Underlying pipeline was deleted")
 
+    if pipe.get("owner_id") and pipe["owner_id"] != current_user.id:
+        raise HTTPException(status_code=403, detail="Forbidden: You do not have access to this pipeline.")
+
     try:
         res = _execute_pipeline_in_sandbox(pipe)
         entry["resolved"] = True
+        save_dead_letter_job_to_db(entry)
         return {"status": "retry_success", "dlq_id": dlq_id, "result": res}
     except Exception as e:
+        save_dead_letter_job_to_db(entry)
         return {"status": "retry_failed", "dlq_id": dlq_id, "error": str(e)}
+

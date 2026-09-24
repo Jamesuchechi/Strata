@@ -5,17 +5,31 @@ Pillar 10: 10.2, 10.3, 10.4, 10.6, 10.7
 import math
 import re
 from typing import Dict, List, Optional, Any
+from collections import defaultdict
 from datetime import datetime, timezone
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
 from pydantic import BaseModel, Field
 
-from strata_api.routers.datasets import _datasets_db, seed_default_datasets_if_needed
+from strata_api.models.user import UserModel
+from strata_api.routers.auth import get_current_user
+from strata_api.routers.datasets import (
+    _datasets_db,
+    seed_default_datasets_if_needed,
+    check_dataset_access,
+    user_has_dataset_access,
+)
+from strata_api.core.persistence import (
+    save_user_favorite_to_db,
+    delete_user_favorite_from_db,
+    save_user_recent_to_db,
+)
 
 router = APIRouter(prefix="/discovery", tags=["Search & Discovery"])
 
-# State for Favorites and Recents
-_favorites_set: set = set()
-_recents_history: List[Dict[str, Any]] = []
+
+# State for Favorites and Recents scoped per user
+_user_favorites: Dict[str, set] = defaultdict(set)
+_user_recents: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
 
 
 # ---------------------------------------------------------------------------
@@ -121,10 +135,11 @@ async def semantic_search(
     min_quality: Optional[int] = Query(None, description="Minimum quality score (0-100)"),
     min_rows: Optional[int] = Query(None, description="Minimum rows"),
     max_rows: Optional[int] = Query(None, description="Maximum rows"),
+    current_user: UserModel = Depends(get_current_user),
 ):
     """Semantic vector search powered by cosine similarity over schema, tags, and descriptive metadata."""
     seed_default_datasets_if_needed()
-    datasets = list(_datasets_db.values())
+    datasets = [d for d in _datasets_db.values() if user_has_dataset_access(d, current_user.id)]
 
     if not datasets:
         return SemanticSearchResponse(query=q, total_matches=0, results=[])
@@ -260,34 +275,46 @@ async def semantic_search(
 # ---------------------------------------------------------------------------
 
 @router.post("/favorites/{dataset_id}")
-async def toggle_favorite(dataset_id: str):
+async def toggle_favorite(
+    dataset_id: str,
+    current_user: UserModel = Depends(get_current_user),
+):
     """Toggle star / bookmark favorite status on a dataset."""
     seed_default_datasets_if_needed()
     if dataset_id not in _datasets_db:
         raise HTTPException(status_code=404, detail="Dataset not found")
 
-    if dataset_id in _favorites_set:
-        _favorites_set.remove(dataset_id)
+    target = _datasets_db[dataset_id]
+    check_dataset_access(target, current_user.id)
+
+    user_favs = _user_favorites[current_user.id]
+    if dataset_id in user_favs:
+        user_favs.remove(dataset_id)
+        delete_user_favorite_from_db(current_user.id, dataset_id)
         is_favorite = False
     else:
-        _favorites_set.add(dataset_id)
+        user_favs.add(dataset_id)
+        save_user_favorite_to_db(current_user.id, dataset_id)
         is_favorite = True
 
     return {
         "dataset_id": dataset_id,
         "is_favorite": is_favorite,
-        "total_favorites": len(_favorites_set),
+        "total_favorites": len(user_favs),
     }
 
 
 @router.get("/favorites")
-async def list_favorites():
-    """List all favorited / bookmarked datasets."""
+async def list_favorites(
+    current_user: UserModel = Depends(get_current_user),
+):
+    """List all favorited / bookmarked datasets for the current user."""
     seed_default_datasets_if_needed()
     items = []
-    for d_id in list(_favorites_set):
+    user_favs = _user_favorites[current_user.id]
+    for d_id in list(user_favs):
         d = _datasets_db.get(d_id)
-        if d:
+        if d and user_has_dataset_access(d, current_user.id):
             items.append({
                 "id": d["id"],
                 "name": d["name"],
@@ -303,35 +330,46 @@ async def list_favorites():
 
 
 @router.post("/recents/{dataset_id}")
-async def record_recent_visit(dataset_id: str):
+async def record_recent_visit(
+    dataset_id: str,
+    current_user: UserModel = Depends(get_current_user),
+):
     """Record dataset access in recently visited history."""
     seed_default_datasets_if_needed()
     if dataset_id not in _datasets_db:
         raise HTTPException(status_code=404, detail="Dataset not found")
 
+    target = _datasets_db[dataset_id]
+    check_dataset_access(target, current_user.id)
+
+    recents = _user_recents[current_user.id]
     # Remove existing entry if present
-    global _recents_history
-    _recents_history = [r for r in _recents_history if r["dataset_id"] != dataset_id]
+    _user_recents[current_user.id] = [r for r in recents if r["dataset_id"] != dataset_id]
     
+    visited_at = datetime.now(timezone.utc).isoformat()
     # Prepend latest visit
-    _recents_history.insert(0, {
+    _user_recents[current_user.id].insert(0, {
         "dataset_id": dataset_id,
-        "visited_at": datetime.now(timezone.utc).isoformat(),
+        "visited_at": visited_at,
     })
     # Keep only last 20 visits
-    _recents_history = _recents_history[:20]
+    _user_recents[current_user.id] = _user_recents[current_user.id][:20]
+
+    save_user_recent_to_db(current_user.id, dataset_id, visited_at)
 
     return {"status": "recorded", "dataset_id": dataset_id}
 
 
 @router.get("/recents")
-async def list_recents():
+async def list_recents(
+    current_user: UserModel = Depends(get_current_user),
+):
     """List recently visited datasets with access timestamps."""
     seed_default_datasets_if_needed()
     items = []
-    for entry in _recents_history:
+    for entry in _user_recents[current_user.id]:
         d = _datasets_db.get(entry["dataset_id"])
-        if d:
+        if d and user_has_dataset_access(d, current_user.id):
             items.append({
                 "id": d["id"],
                 "name": d["name"],
@@ -348,7 +386,10 @@ async def list_recents():
 # ---------------------------------------------------------------------------
 
 @router.get("/recommendations/{dataset_id}", response_model=List[RecommendationItem])
-async def get_dataset_recommendations(dataset_id: str):
+async def get_dataset_recommendations(
+    dataset_id: str,
+    current_user: UserModel = Depends(get_current_user),
+):
     """Teams that used this dataset also explored...
     Calculates schema overlap, tag similarity, and domain affinity.
     """
@@ -357,6 +398,8 @@ async def get_dataset_recommendations(dataset_id: str):
     if not target:
         raise HTTPException(status_code=404, detail="Target dataset not found")
 
+    check_dataset_access(target, current_user.id)
+
     target_cols = {c.get("name", "").lower() for c in target.get("schema_fields", [])}
     target_tags = {t.lower() for t in target.get("tags", [])}
 
@@ -364,6 +407,8 @@ async def get_dataset_recommendations(dataset_id: str):
 
     for other_id, other in _datasets_db.items():
         if other_id == dataset_id:
+            continue
+        if not user_has_dataset_access(other, current_user.id):
             continue
 
         other_cols = {c.get("name", "").lower() for c in other.get("schema_fields", [])}
@@ -406,3 +451,4 @@ async def get_dataset_recommendations(dataset_id: str):
     # Sort descending by similarity score
     recommendations.sort(key=lambda r: r.similarity_score, reverse=True)
     return recommendations[:5]
+

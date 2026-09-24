@@ -14,14 +14,21 @@ class StrataClient:
 
     def __init__(
         self,
-        base_url: str = "http://127.0.0.1:8000/api",
+        base_url: Optional[str] = None,
+        api_key: Optional[str] = None,
         auth_token: Optional[str] = None,
         timeout: float = 30.0,
     ):
-        self.base_url = base_url.rstrip("/")
+        raw_url = base_url or os.environ.get("STRATA_API_URL", "http://127.0.0.1:8000/api")
+        self.base_url = raw_url.rstrip("/")
+        self.api_key = api_key or os.environ.get("STRATA_API_KEY")
         self.headers = {}
-        if auth_token:
+        if self.api_key:
+            self.headers["X-API-Key"] = self.api_key
+        elif auth_token:
             self.headers["Authorization"] = f"Bearer {auth_token}"
+        elif os.environ.get("STRATA_API_TOKEN"):
+            self.headers["Authorization"] = f"Bearer {os.environ.get('STRATA_API_TOKEN')}"
         self.timeout = timeout
 
     def check_health(self) -> bool:

@@ -6,7 +6,6 @@ import { requestPasswordReset } from "@/lib/api";
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
-  const [resetToken, setResetToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -17,10 +16,7 @@ export default function ForgotPasswordPage() {
     setErrorMessage(null);
 
     try {
-      const res = await requestPasswordReset(email);
-      if (res.demo_token) {
-        setResetToken(res.demo_token);
-      }
+      await requestPasswordReset(email);
       setIsSubmitted(true);
     } catch (err: any) {
       setErrorMessage(err.message || "Failed to submit reset request.");
@@ -121,10 +117,10 @@ export default function ForgotPasswordPage() {
 
           <div className="space-y-3">
             <Link
-              href={`/reset-password?email=${encodeURIComponent(email)}${resetToken ? `&token=${encodeURIComponent(resetToken)}` : ""}`}
+              href="/login"
               className="block w-full rounded-xl bg-[#1E1915] px-4 py-3 text-center text-sm font-semibold text-white shadow-sm hover:bg-black transition-colors"
             >
-              Simulate Clicking Reset Link
+              Return to sign in
             </Link>
 
             <button

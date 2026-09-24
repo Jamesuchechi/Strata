@@ -6,18 +6,27 @@ import os
 import shutil
 import hashlib
 from typing import Dict, List, Optional, Any
+from collections import defaultdict
 from datetime import datetime, timezone
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
 from pydantic import BaseModel, Field
 
+from strata_api.models.user import UserModel
+from strata_api.routers.auth import get_current_user, get_optional_current_user
 from strata_api.routers.datasets import (
     _datasets_db,
     register_dataset_in_store,
     get_storage_dir,
     seed_default_datasets_if_needed,
 )
+from strata_api.core.persistence import (
+    save_showcase_item_to_db,
+    save_user_starred_showcase_to_db,
+    delete_user_starred_showcase_from_db,
+)
 
 router = APIRouter(prefix="/showcase", tags=["Public Showcase & Sharing"])
+
 
 # ---------------------------------------------------------------------------
 # Standard Licenses Catalog (Pillar 11.5)
@@ -236,8 +245,8 @@ _showcase_registry: Dict[str, Dict[str, Any]] = {
     },
 }
 
-# User starred showcase items
-_user_starred_showcase: set = set()
+# User starred showcase items scoped per user_id
+_user_starred_showcase: Dict[str, set] = defaultdict(set)
 
 
 # ---------------------------------------------------------------------------
@@ -321,12 +330,16 @@ def _generate_embed_snippets(item: Dict[str, Any], theme: str = "light", show_sc
 # Endpoints
 # ---------------------------------------------------------------------------
 
+# Public-by-design endpoint:
+# Open data showcase catalog allowing public visitors and researchers to discover
+# community and benchmark datasets without an active user session.
 @router.get("")
 async def list_showcase_datasets(
     domain: Optional[str] = Query(None, description="Filter by domain category"),
     tag: Optional[str] = Query(None, description="Filter by tag"),
     q: Optional[str] = Query(None, description="Search query across titles and descriptions"),
     sort_by: str = Query("trending", description="Sort by: trending, stars, downloads, recent, quality"),
+    current_user: Optional[UserModel] = Depends(get_optional_current_user),
 ):
     """List public showcase datasets with filtering and sort controls (Pillar 11.2, 11.6)."""
     items = list(_showcase_registry.values())
@@ -358,10 +371,11 @@ async def list_showcase_datasets(
         items.sort(key=lambda x: (x.get("stars", 0) * 2 + x.get("downloads", 0)), reverse=True)
 
     # Attach is_starred
+    user_stars = _user_starred_showcase[current_user.id] if current_user else set()
     enriched = []
     for item in items:
         copy_item = dict(item)
-        copy_item["is_starred"] = item["id"] in _user_starred_showcase
+        copy_item["is_starred"] = item["id"] in user_stars
         enriched.append(copy_item)
 
     return {
@@ -371,14 +385,21 @@ async def list_showcase_datasets(
     }
 
 
+# Public-by-design endpoint:
+# Reference open-source and open-data license directory for public documentation and compliance lookup.
 @router.get("/licenses")
 async def get_licenses_catalog():
     """List standardized open licenses with usage permissions (Pillar 11.5)."""
     return {"licenses": LICENSES_CATALOG}
 
 
+# Public-by-design endpoint:
+# Public dossier for open datasets allowing public inspection of schema, sample preview, and citations.
 @router.get("/{dataset_id}")
-async def get_showcase_dataset(dataset_id: str):
+async def get_showcase_dataset(
+    dataset_id: str,
+    current_user: Optional[UserModel] = Depends(get_optional_current_user),
+):
     """Detailed showcase page dossier with schema, sample preview, citations, and stats."""
     item = _showcase_registry.get(dataset_id)
     if not item:
@@ -386,11 +407,12 @@ async def get_showcase_dataset(dataset_id: str):
 
     citations = _generate_citations(item)
     embeds = _generate_embed_snippets(item)
+    user_stars = _user_starred_showcase[current_user.id] if current_user else set()
 
     return {
         "dataset": {
             **item,
-            "is_starred": dataset_id in _user_starred_showcase,
+            "is_starred": dataset_id in user_stars,
         },
         "citations": citations,
         "embeds": embeds,
@@ -398,19 +420,27 @@ async def get_showcase_dataset(dataset_id: str):
 
 
 @router.post("/{dataset_id}/star")
-async def toggle_showcase_star(dataset_id: str):
-    """Star / bookmark a public showcase dataset."""
+async def toggle_showcase_star(
+    dataset_id: str,
+    current_user: UserModel = Depends(get_current_user),
+):
+    """Star / bookmark a public showcase dataset (requires authentication)."""
     item = _showcase_registry.get(dataset_id)
     if not item:
         raise HTTPException(status_code=404, detail="Showcase dataset not found")
 
-    if dataset_id in _user_starred_showcase:
-        _user_starred_showcase.remove(dataset_id)
+    user_stars = _user_starred_showcase[current_user.id]
+    if dataset_id in user_stars:
+        user_stars.remove(dataset_id)
         item["stars"] = max(0, item.get("stars", 1) - 1)
+        delete_user_starred_showcase_from_db(current_user.id, dataset_id)
+        save_showcase_item_to_db(item)
         is_starred = False
     else:
-        _user_starred_showcase.add(dataset_id)
+        user_stars.add(dataset_id)
         item["stars"] = item.get("stars", 0) + 1
+        save_user_starred_showcase_to_db(current_user.id, dataset_id)
+        save_showcase_item_to_db(item)
         is_starred = True
 
     return {
@@ -421,13 +451,17 @@ async def toggle_showcase_star(dataset_id: str):
 
 
 @router.post("/{dataset_id}/download")
-async def track_download(dataset_id: str):
-    """Increment download statistics and provide direct download payload info."""
+async def track_download(
+    dataset_id: str,
+    current_user: UserModel = Depends(get_current_user),
+):
+    """Increment download statistics and provide direct download payload info (requires authentication)."""
     item = _showcase_registry.get(dataset_id)
     if not item:
         raise HTTPException(status_code=404, detail="Showcase dataset not found")
 
     item["downloads"] = item.get("downloads", 0) + 1
+    save_showcase_item_to_db(item)
 
     return {
         "status": "ready",
@@ -439,6 +473,9 @@ async def track_download(dataset_id: str):
     }
 
 
+
+# Public-by-design endpoint:
+# Academic citation generator in standard citation formats (BibTeX, APA, IEEE, etc.) for open research.
 @router.get("/{dataset_id}/citation")
 async def get_citation(dataset_id: str):
     """Automatic academic citation generation (BibTeX, APA, IEEE, Harvard, Chicago) (Pillar 11.4)."""
@@ -449,6 +486,8 @@ async def get_citation(dataset_id: str):
     return _generate_citations(item)
 
 
+# Public-by-design endpoint:
+# Generates embed HTML/React code snippets for publicly embedding showcase dataset widgets.
 @router.get("/{dataset_id}/embed-config")
 async def get_embed_config(
     dataset_id: str,
@@ -464,7 +503,10 @@ async def get_embed_config(
 
 
 @router.post("/{dataset_id}/fork")
-async def fork_showcase_dataset(dataset_id: str):
+async def fork_showcase_dataset(
+    dataset_id: str,
+    current_user: UserModel = Depends(get_current_user),
+):
     """One-click public dataset forking into personal or team workspace (Pillar 11.7).
     Clones schema, sample data, and initializes a default version branch in Strata.
     """
@@ -490,7 +532,7 @@ async def fork_showcase_dataset(dataset_id: str):
 
     content_hash = hashlib.sha256(open(target_path, "rb").read()).hexdigest()
 
-    # Register into user catalog (_datasets_db)
+    # Register into user catalog (_datasets_db) with ownership assigned to current_user.id
     new_reg = register_dataset_in_store(
         file_path=target_path,
         filename=target_filename,
@@ -498,10 +540,12 @@ async def fork_showcase_dataset(dataset_id: str):
         description=f"Forked from public showcase: '{item.get('title')}'. Original Author: {item.get('author')}.",
         tags=item.get("tags", []) + ["forked", "showcase"],
         custom_id=new_dataset_id,
+        owner_id=current_user.id,
     )
 
     # Increment fork count on showcase item
     item["forks"] = item.get("forks", 0) + 1
+    save_showcase_item_to_db(item)
 
     return {
         "status": "forked",
@@ -510,3 +554,4 @@ async def fork_showcase_dataset(dataset_id: str):
         "fork_count": item["forks"],
         "dataset": new_reg,
     }
+

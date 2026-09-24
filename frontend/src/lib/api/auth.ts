@@ -40,18 +40,21 @@ export interface ResetPasswordPayload {
   new_password: string;
 }
 
-// Client-side Token Storage Helpers
-const TOKEN_KEY = "strata_access_token";
+// Client-side Profile Storage Helpers (Tokens are safely stored in HttpOnly cookies to prevent XSS)
 const USER_KEY = "strata_user_profile";
 
+/**
+ * @deprecated Tokens are stored in HttpOnly cookies by the backend. Kept for backwards compatibility.
+ */
 export function getStoredToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem(TOKEN_KEY);
+  return null;
 }
 
-export function setStoredToken(token: string): void {
-  if (typeof window === "undefined") return;
-  localStorage.setItem(TOKEN_KEY, token);
+/**
+ * @deprecated Tokens are stored in HttpOnly cookies by the backend. Kept for backwards compatibility.
+ */
+export function setStoredToken(_token: string): void {
+  // No-op: Token is managed via HttpOnly secure cookies to prevent XSS
 }
 
 export function getStoredUser(): User | null {
@@ -72,7 +75,6 @@ export function setStoredUser(user: User): void {
 
 export function clearStoredAuth(): void {
   if (typeof window === "undefined") return;
-  localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(USER_KEY);
 }
 
@@ -81,6 +83,7 @@ export async function registerUser(payload: RegisterPayload): Promise<AuthRespon
   const response = await fetch(`${API_BASE}/auth/register`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
+    credentials: "include",
     body: JSON.stringify(payload),
   });
 
@@ -90,7 +93,6 @@ export async function registerUser(payload: RegisterPayload): Promise<AuthRespon
   }
 
   const data: AuthResponse = await response.json();
-  setStoredToken(data.access_token);
   setStoredUser(data.user);
   return data;
 }
@@ -99,6 +101,7 @@ export async function loginUser(payload: LoginPayload): Promise<AuthResponse> {
   const response = await fetch(`${API_BASE}/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
+    credentials: "include",
     body: JSON.stringify(payload),
   });
 
@@ -108,15 +111,43 @@ export async function loginUser(payload: LoginPayload): Promise<AuthResponse> {
   }
 
   const data: AuthResponse = await response.json();
-  setStoredToken(data.access_token);
   setStoredUser(data.user);
   return data;
 }
 
-export async function requestMagicLink(email: string): Promise<{ status: string; message: string; demo_link?: string }> {
+export async function logoutUser(): Promise<void> {
+  try {
+    await fetch(`${API_BASE}/auth/logout`, {
+      method: "POST",
+      credentials: "include",
+    });
+  } finally {
+    clearStoredAuth();
+  }
+}
+
+export async function refreshSession(): Promise<AuthResponse> {
+  const response = await fetch(`${API_BASE}/auth/refresh`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+  });
+
+  if (!response.ok) {
+    clearStoredAuth();
+    throw new Error("Failed to refresh session");
+  }
+
+  const data: AuthResponse = await response.json();
+  setStoredUser(data.user);
+  return data;
+}
+
+export async function requestMagicLink(email: string): Promise<{ status: string; message: string }> {
   const response = await fetch(`${API_BASE}/auth/magic-link`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
+    credentials: "include",
     body: JSON.stringify({ email }),
   });
 
@@ -128,10 +159,11 @@ export async function requestMagicLink(email: string): Promise<{ status: string;
   return response.json();
 }
 
-export async function requestPasswordReset(email: string): Promise<{ status: string; message: string; demo_token?: string }> {
+export async function requestPasswordReset(email: string): Promise<{ status: string; message: string }> {
   const response = await fetch(`${API_BASE}/auth/forgot-password`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
+    credentials: "include",
     body: JSON.stringify({ email }),
   });
 
@@ -147,6 +179,7 @@ export async function resetPassword(payload: ResetPasswordPayload): Promise<{ st
   const response = await fetch(`${API_BASE}/auth/reset-password`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
+    credentials: "include",
     body: JSON.stringify(payload),
   });
 
@@ -159,17 +192,12 @@ export async function resetPassword(payload: ResetPasswordPayload): Promise<{ st
 }
 
 export async function getCurrentUser(): Promise<User> {
-  const token = getStoredToken();
-  if (!token) {
-    throw new Error("No active session token found");
-  }
-
   const response = await fetch(`${API_BASE}/auth/me`, {
     method: "GET",
     headers: {
-      "Authorization": `Bearer ${token}`,
       "Content-Type": "application/json",
     },
+    credentials: "include",
   });
 
   if (!response.ok) {

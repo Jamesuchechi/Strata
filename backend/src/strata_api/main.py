@@ -3,6 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from strata_api.config import settings
 from strata_api.core.database import init_db
+from strata_api.core.arq_pool import init_arq_pool, close_arq_pool
 from strata_api.routers import (
     health_router,
     preview_router,
@@ -22,18 +23,28 @@ from strata_api.routers import (
     integrations_router,
     security_router,
 )
+from strata_api.routers.jobs import router as jobs_router
+
+
+from strata_api.core.security import validate_jwt_security_config
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan context for startup and shutdown tasks."""
+    validate_jwt_security_config()
     # Ensure database tables exist
     await init_db()
+    # Connect to Redis for background job queue (non-fatal if Redis is down)
+    await init_arq_pool()
     yield
+    # Graceful shutdown: close ARQ pool
+    await close_arq_pool()
 
 
 def create_app() -> FastAPI:
     """Application factory for Strata API."""
+    validate_jwt_security_config()
     app = FastAPI(
         title=settings.PROJECT_NAME,
         description="The AI-Native Data Science Studio & Version Control API.",
@@ -70,6 +81,7 @@ def create_app() -> FastAPI:
     app.include_router(pipelines_router, prefix=settings.API_V1_PREFIX)
     app.include_router(integrations_router, prefix=settings.API_V1_PREFIX)
     app.include_router(security_router, prefix=settings.API_V1_PREFIX)
+    app.include_router(jobs_router, prefix=settings.API_V1_PREFIX)
 
     from strata_api.routers.datasets import get_shared_dataset
     app.add_api_route(
@@ -93,9 +105,30 @@ app = create_app()
 
 
 def start():
-    """CLI runner for uvicorn."""
-    import uvicorn
-    uvicorn.run("strata_api.main:app", host="0.0.0.0", port=8000, reload=True)
+    """CLI runner: 'strata-api' (API server) or 'strata-api worker' (ARQ worker)."""
+    import sys
+    if len(sys.argv) > 1 and sys.argv[1] == "worker":
+        _start_worker()
+    else:
+        import uvicorn
+        uvicorn.run("strata_api.main:app", host="0.0.0.0", port=8000, reload=True)
+
+
+def _start_worker():
+    """Launch the ARQ background job worker.
+
+    Run::
+
+        strata-api worker
+
+    or directly::
+
+        arq strata_api.core.arq_worker.WorkerSettings
+    """
+    import asyncio
+    from arq import run_worker
+    from strata_api.core.arq_worker import WorkerSettings
+    run_worker(WorkerSettings)
 
 
 if __name__ == "__main__":

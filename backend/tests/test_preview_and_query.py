@@ -3,13 +3,14 @@
 import pytest
 from httpx import AsyncClient, ASGITransport
 from strata_api.main import app
+from tests.conftest import AUTH_HEADERS_A
 
 
 @pytest.mark.asyncio
 async def test_upload_preview_and_deduplication():
     """Test uploading a dataset, verifying preview, and detecting duplicate uploads."""
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async with AsyncClient(transport=transport, base_url="http://test", headers=AUTH_HEADERS_A) as client:
         csv_content = b"id,name,val\n1,Alpha,10\n2,Beta,20\n"
         files = {"file": ("test_dedup.csv", csv_content, "text/csv")}
 
@@ -35,7 +36,7 @@ async def test_upload_preview_and_deduplication():
 async def test_upload_and_query_csv():
     """Test uploading a new CSV file and running DuckDB SQL over it."""
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async with AsyncClient(transport=transport, base_url="http://test", headers=AUTH_HEADERS_A) as client:
         csv_content = b"user_id,username,credits,active\n1,ada,150.5,true\n2,charles,80.0,false\n3,grace,220.0,true\n"
         files = {"file": ("engineers.csv", csv_content, "text/csv")}
 

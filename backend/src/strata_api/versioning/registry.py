@@ -3,9 +3,11 @@
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from strata_api.versioning.graph import VersionGraph
+from strata_api.core.persistence import save_commit_to_db
 
 _graph = VersionGraph()
 _commits: List[Dict[str, Any]] = []
+
 
 
 def _parse_semver(version_str: str) -> Dict[str, Any]:
@@ -39,11 +41,14 @@ def record_commit(
     is_pinned: bool = False,
     access_level: str = "workspace",
     custom_metadata: Optional[Dict[str, Any]] = None,
+    owner_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Store commit in DAG and chronological list."""
     # Avoid duplicate initial commit for same hash and dataset
     for existing in _commits:
         if existing["full_hash"] == version_hash and existing["dataset_name"] == dataset_name:
+            if owner_id and not existing.get("owner_id"):
+                existing["owner_id"] = owner_id
             return existing
 
     semver_info = _parse_semver(version_tag)
@@ -58,6 +63,7 @@ def record_commit(
         "version": semver_info["semver_str"],
         "semver": semver_info,
         "dataset_name": dataset_name,
+        "owner_id": owner_id,
         "parent_hash": parent_hash,
         "message": message,
         "author": author,
@@ -83,6 +89,7 @@ def record_commit(
         metadata=commit_record,
     )
     _commits.insert(0, commit_record)
+    save_commit_to_db(commit_record)
     return commit_record
 
 
@@ -106,6 +113,7 @@ def add_tag_to_commit(commit_id: str, tag: str) -> Optional[Dict[str, Any]]:
     clean_tag = tag.strip().lower()
     if clean_tag and clean_tag not in tags:
         tags.append(clean_tag)
+        save_commit_to_db(c)
     return c
 
 
@@ -118,6 +126,7 @@ def remove_tag_from_commit(commit_id: str, tag: str) -> Optional[Dict[str, Any]]
     clean_tag = tag.strip().lower()
     if clean_tag in tags:
         tags.remove(clean_tag)
+        save_commit_to_db(c)
     return c
 
 
@@ -130,6 +139,7 @@ def toggle_commit_pin(commit_id: str, is_pinned: Optional[bool] = None) -> Optio
         c["is_pinned"] = is_pinned
     else:
         c["is_pinned"] = not c.get("is_pinned", False)
+    save_commit_to_db(c)
     return c
 
 
@@ -140,6 +150,7 @@ def update_commit_permissions(commit_id: str, access_level: str) -> Optional[Dic
         return None
     valid_levels = {"public", "workspace", "private_draft"}
     c["access_level"] = access_level if access_level in valid_levels else "workspace"
+    save_commit_to_db(c)
     return c
 
 
@@ -149,6 +160,7 @@ def update_commit_metadata(commit_id: str, metadata: Dict[str, Any]) -> Optional
     if not c:
         return None
     c.setdefault("custom_metadata", {}).update(metadata)
+    save_commit_to_db(c)
     return c
 
 
@@ -182,7 +194,9 @@ def bump_commit_semver(commit_id: str, bump_type: str = "patch") -> Optional[Dic
     c["version"] = new_str
     if new_str not in c.setdefault("tags", []):
         c["tags"].append(new_str)
+    save_commit_to_db(c)
     return c
+
 
 
 def clear_commits():

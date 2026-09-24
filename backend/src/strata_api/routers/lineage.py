@@ -3,9 +3,15 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
-from fastapi import APIRouter, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
+
+from strata_api.models.user import UserModel
+from strata_api.routers.auth import get_current_user
+from strata_api.routers.datasets import _datasets_db, check_dataset_access, find_dataset_by_name_or_id
+from strata_api.core.persistence import save_ml_model_to_db
 
 router = APIRouter(prefix="/lineage", tags=["Lineage & Model Registry"])
+
 
 # Registered models database linking dataset version hashes to ML checkpoints / runs
 _models_db: List[Dict[str, Any]] = []
@@ -28,19 +34,31 @@ class RegisterModelRequest(BaseModel):
 
 
 @router.get("/models")
-async def list_registered_models(dataset_name: Optional[str] = None):
+async def list_registered_models(
+    dataset_name: Optional[str] = None,
+    current_user: UserModel = Depends(get_current_user),
+):
     """List all registered ML models linked to dataset versions and experiment tracker runs."""
+    user_models = [m for m in _models_db if not m.get("owner_id") or m["owner_id"] == current_user.id]
     if dataset_name:
-        return [m for m in _models_db if m.get("dataset_name") == dataset_name]
-    return _models_db
+        return [m for m in user_models if m.get("dataset_name") == dataset_name]
+    return user_models
 
 
 @router.post("/models")
-async def register_model(req: RegisterModelRequest):
+async def register_model(
+    req: RegisterModelRequest,
+    current_user: UserModel = Depends(get_current_user),
+):
     """Register a trained ML model checkpoint linked directly to an immutable dataset version hash."""
+    ds = find_dataset_by_name_or_id(req.dataset_name)
+    if ds:
+        check_dataset_access(ds, current_user.id)
+
     model_id = f"mod_{uuid.uuid4().hex[:8]}"
     record = {
         "id": model_id,
+        "owner_id": current_user.id,
         "name": req.name,
         "framework": req.framework,
         "algorithm": req.algorithm or "Classifier",
@@ -53,26 +71,33 @@ async def register_model(req: RegisterModelRequest):
         "hyperparameters": req.hyperparameters,
         "artifact_uri": req.artifact_uri or f"s3://strata-models/checkpoints/{model_id}.pkl",
         "created_at": datetime.now(timezone.utc).isoformat(),
-        "author": req.author or "Owner",
+        "author": req.author or current_user.full_name,
         "status": req.status or "staging",
     }
     _models_db.insert(0, record)
+    save_ml_model_to_db(record)
     return {"message": "Model registered successfully in Strata Model Registry", "model": record}
 
 
+
 @router.get("/graph")
-async def get_full_lineage_graph():
+async def get_full_lineage_graph(current_user: UserModel = Depends(get_current_user)):
     """Build and return complete end-to-end provenance graph across all active layers:
     Raw Source Files -> Ingested Datasets -> Version Snapshots -> Registered Models."""
-    from strata_api.routers.datasets import _datasets_db
     from strata_api.versioning.registry import get_all_commits
+
+    user_datasets = {
+        k: d for k, d in _datasets_db.items()
+        if not d.get("owner_id") or d["owner_id"] == current_user.id
+    }
+    user_models = [m for m in _models_db if not m.get("owner_id") or m["owner_id"] == current_user.id]
 
     commits = get_all_commits()
     nodes = []
     edges = []
 
     # 1. Ingestion Sources & Datasets
-    for d_id, d in _datasets_db.items():
+    for d_id, d in user_datasets.items():
         fname = d.get("filename", d_id)
         raw_id = f"raw_{d_id}"
         nodes.append({
@@ -130,7 +155,7 @@ async def get_full_lineage_graph():
             })
         else:
             # Link to dataset catalog node
-            matched_d = next((d_id for d_id, d in _datasets_db.items() if d.get("filename") == c.get("dataset_name")), None)
+            matched_d = next((d_id for d_id, d in user_datasets.items() if d.get("filename") == c.get("dataset_name")), None)
             if matched_d:
                 edges.append({
                     "id": f"e_init_{c['id']}",
@@ -140,7 +165,7 @@ async def get_full_lineage_graph():
                 })
 
     # 3. Registered ML Models (if any exist)
-    for m in _models_db:
+    for m in user_models:
         m_id = f"model_{m['id']}"
         metric_summary = ", ".join([f"{k.upper()}: {v}" for k, v in list(m.get("metrics", {}).items())[:2]])
         nodes.append({
@@ -174,9 +199,23 @@ async def get_full_lineage_graph():
 
 
 @router.get("/trace/backward/{asset_id}")
-async def trace_backward_lineage(asset_id: str):
+async def trace_backward_lineage(
+    asset_id: str,
+    current_user: UserModel = Depends(get_current_user),
+):
     """Trace backward from any model or report up to its initial raw data sources."""
-    g = await get_full_lineage_graph()
+    if asset_id.startswith("dataset_"):
+        d_id = asset_id.replace("dataset_", "")
+        ds = _datasets_db.get(d_id)
+        if ds:
+            check_dataset_access(ds, current_user.id)
+    elif asset_id.startswith("model_"):
+        m_id = asset_id.replace("model_", "")
+        m = next((m for m in _models_db if m["id"] == m_id), None)
+        if m and m.get("owner_id") and m["owner_id"] != current_user.id:
+            raise HTTPException(status_code=403, detail="Forbidden: You do not have access to this asset.")
+
+    g = await get_full_lineage_graph(current_user)
     nodes_by_id = {n["id"]: n for n in g["nodes"]}
 
     visited_nodes = set()
@@ -203,9 +242,23 @@ async def trace_backward_lineage(asset_id: str):
 
 
 @router.get("/trace/forward/{asset_id}")
-async def trace_forward_impact(asset_id: str):
+async def trace_forward_impact(
+    asset_id: str,
+    current_user: UserModel = Depends(get_current_user),
+):
     """Perform forward impact analysis: see all downstream features, models, and reports that would be affected."""
-    g = await get_full_lineage_graph()
+    if asset_id.startswith("dataset_"):
+        d_id = asset_id.replace("dataset_", "")
+        ds = _datasets_db.get(d_id)
+        if ds:
+            check_dataset_access(ds, current_user.id)
+    elif asset_id.startswith("model_"):
+        m_id = asset_id.replace("model_", "")
+        m = next((m for m in _models_db if m["id"] == m_id), None)
+        if m and m.get("owner_id") and m["owner_id"] != current_user.id:
+            raise HTTPException(status_code=403, detail="Forbidden: You do not have access to this asset.")
+
+    g = await get_full_lineage_graph(current_user)
     nodes_by_id = {n["id"]: n for n in g["nodes"]}
 
     visited_nodes = set()
@@ -236,10 +289,14 @@ async def trace_forward_impact(asset_id: str):
 
 
 @router.get("/protection/check/{version_hash}")
-async def check_deletion_protection(version_hash: str):
+async def check_deletion_protection(
+    version_hash: str,
+    current_user: UserModel = Depends(get_current_user),
+):
     """Lineage-aware deletion protection check. Blocks deletion if active downstream assets or production models depend on this version."""
+    user_models = [m for m in _models_db if not m.get("owner_id") or m["owner_id"] == current_user.id]
     active_models = [
-        m for m in _models_db
+        m for m in user_models
         if m.get("dataset_version_hash") == version_hash or m.get("dataset_version_hash") == version_hash[:7]
     ]
 
@@ -261,10 +318,11 @@ async def check_deletion_protection(version_hash: str):
 
 @router.get("/export")
 async def export_openlineage(
-    format: str = Query("openlineage", description="Export format: openlineage, graphviz, or json")
+    format: str = Query("openlineage", description="Export format: openlineage, graphviz, or json"),
+    current_user: UserModel = Depends(get_current_user),
 ):
     """Export complete dataset and model lineage graph in standardized OpenLineage compliant JSON format or GraphViz DOT."""
-    g = await get_full_lineage_graph()
+    g = await get_full_lineage_graph(current_user)
 
     if format == "graphviz":
         dot_lines = ["digraph StrataLineage {", "  rankdir=LR;", "  node [shape=box, style=rounded, fontname=\"Helvetica\"];"]
@@ -275,6 +333,8 @@ async def export_openlineage(
         dot_lines.append("}")
         return Response(content="\n".join(dot_lines), media_type="text/vnd.graphviz")
 
+    user_models = [m for m in _models_db if not m.get("owner_id") or m["owner_id"] == current_user.id]
+
     # OpenLineage standard format specification
     open_lineage = {
         "eventType": "COMPLETE",
@@ -282,7 +342,7 @@ async def export_openlineage(
         "producer": "https://github.com/jamesuchechi/strata",
         "schemaURL": "https://openlineage.io/spec/1-0-5/OpenLineage.json#/definitions/RunEvent",
         "job": {
-            "namespace": "strata.workspace.acme",
+            "namespace": f"strata.user.{current_user.id}",
             "name": "strata_provenance_pipeline",
         },
         "inputs": [
@@ -306,7 +366,7 @@ async def export_openlineage(
                     "run": {"runId": m.get("run_id")},
                 },
             }
-            for m in _models_db
+            for m in user_models
         ],
         "strata_graph_metadata": {
             "total_nodes": g["total_nodes"],

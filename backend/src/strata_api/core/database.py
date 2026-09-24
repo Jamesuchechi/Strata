@@ -54,9 +54,13 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 
 
 async def init_db() -> None:
-    """Initialize database tables."""
+    """Initialize database tables and sync persistence state."""
     # Import all models here so they register with Base.metadata
-    from strata_api.models import user, dataset  # noqa: F401
+    import strata_api.models  # noqa: F401
+    from strata_api.core.persistence import load_all_from_db
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+    # Sync any persisted entities from database into runtime
+    load_all_from_db()

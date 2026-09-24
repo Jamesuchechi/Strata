@@ -67,6 +67,7 @@ def test_auth_registration_and_login_flow(client: TestClient):
     assert me_data["full_name"] == "Ada Lovelace"
 
     # 6. Access /me with missing or malformed token
+    client.cookies.clear()
     unauth_res = client.get("/api/auth/me")
     assert unauth_res.status_code == 401
 
@@ -78,20 +79,30 @@ def test_auth_registration_and_login_flow(client: TestClient):
 
 
 def test_magic_link_flow(client: TestClient):
-    """Test requesting a passwordless magic login link."""
+    """Test requesting a passwordless magic login link without leaking token."""
+    from strata_api.core.email import get_latest_token_for_email
+
     uid = uuid.uuid4().hex[:8]
+    email = f"alan.{uid}@strata.ai"
     magic_res = client.post(
         "/api/auth/magic-link",
-        json={"email": f"alan.{uid}@strata.ai"},
+        json={"email": email},
     )
     assert magic_res.status_code == 200
     data = magic_res.json()
     assert data["status"] == "success"
-    assert "magic_token" in data["demo_link"]
+    # Credentials / tokens must never appear in unauthenticated response
+    assert "demo_link" not in data
+    assert "token" not in data
+    # Token was dispatched via email service on the server side
+    server_token = get_latest_token_for_email(email, "magic_link")
+    assert server_token is not None
 
 
 def test_forgot_and_reset_password_flow(client: TestClient):
-    """Test requesting a password reset and updating password."""
+    """Test requesting a password reset and updating password without leaking credentials."""
+    from strata_api.core.email import get_latest_token_for_email
+
     uid = uuid.uuid4().hex[:8]
     user_email = f"katherine.{uid}@strata.ai"
     initial_pw = "InitialSecret123!"
@@ -114,13 +125,19 @@ def test_forgot_and_reset_password_flow(client: TestClient):
         json={"email": user_email},
     )
     assert forgot_res.status_code == 200
-    demo_token = forgot_res.json().get("demo_token")
-    assert demo_token is not None
+    body = forgot_res.json()
+    # Ensure credential token is NEVER returned in client response
+    assert "demo_token" not in body
+    assert "token" not in body
+
+    # Retrieve dispatched token from server-side email service
+    reset_token = get_latest_token_for_email(user_email, "reset_password")
+    assert reset_token is not None
 
     # Perform reset with token
     reset_res = client.post(
         "/api/auth/reset-password",
-        json={"token": demo_token, "new_password": new_pw},
+        json={"token": reset_token, "new_password": new_pw},
     )
     assert reset_res.status_code == 200
 

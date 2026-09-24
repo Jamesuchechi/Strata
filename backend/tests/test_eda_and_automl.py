@@ -2,10 +2,16 @@
 
 import io
 import pytest
+from unittest.mock import AsyncMock, patch
 from fastapi.testclient import TestClient
 from strata_api.main import create_app
+from tests.conftest import AUTH_HEADERS_A
 
-client = TestClient(create_app())
+client = TestClient(create_app(), headers=AUTH_HEADERS_A)
+
+
+class _MockJob:
+    job_id = "mock_automl_job_001"
 
 
 def test_deep_eda_and_automl_flow():
@@ -56,21 +62,34 @@ def test_deep_eda_and_automl_flow():
     assert "p_value" in hyp_data
     assert "takeaway" in hyp_data
 
-    # 4. Test AutoML Training (Classification)
-    train_res = client.post(
-        "/api/automl/train",
-        json={
-            "dataset_id": dataset_id,
-            "target_column": "churned",
-            "task_type": "classification",
-        }
-    )
-    assert train_res.status_code == 200
+    # 4. Test AutoML Training (Classification) — now async via ARQ
+    # The endpoint returns immediately with a job_id; actual training runs in the worker.
+    mock_pool = AsyncMock()
+    mock_pool.enqueue_job = AsyncMock(return_value=_MockJob())
+    with patch("strata_api.routers.automl.get_arq_pool", return_value=mock_pool):
+        train_res = client.post(
+            "/api/automl/train",
+            json={
+                "dataset_id": dataset_id,
+                "target_column": "churned",
+                "task_type": "classification",
+            }
+        )
+    assert train_res.status_code == 200, train_res.text
     model_data = train_res.json()
-    assert model_data["task_type"] == "classification"
-    assert "accuracy" in model_data["diagnostics"]
-    assert "feature_importances" in model_data
-    assert len(model_data["feature_importances"]) > 0
+    # Async: endpoint returns queued status + job_id immediately
+    assert model_data["status"] == "queued"
+    assert "job_id" in model_data
+    assert model_data["job_id"]  # non-empty
+    assert model_data["target_column"] == "churned"
+    # Verify the heavy task was dispatched to ARQ (not run inline)
+    mock_pool.enqueue_job.assert_called_once_with(
+        "train_automl_task",
+        dataset_record=mock_pool.enqueue_job.call_args[1]["dataset_record"],
+        target_column="churned",
+        task_type="classification",
+        model_family="random_forest",
+    )
 
     # 5. Test Format Conversion (Convert to Parquet)
     convert_res = client.post(f"/api/datasets/{dataset_id}/convert?target_format=parquet")

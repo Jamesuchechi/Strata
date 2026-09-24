@@ -1,7 +1,15 @@
 import hashlib
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel
-from fastapi import APIRouter, HTTPException, Query, Response
+from fastapi import APIRouter, HTTPException, Query, Response, Depends
+from strata_api.models.user import UserModel
+from strata_api.routers.auth import get_current_user
+from strata_api.routers.datasets import (
+    _datasets_db,
+    find_dataset_by_name_or_id,
+    check_dataset_access,
+    user_has_dataset_access,
+)
 from strata_api.versioning.diff import (
     compute_schema_diff,
     compute_distribution_diff,
@@ -24,6 +32,15 @@ from strata_api.versioning.registry import (
 from strata_api.schemas.diff import DiffRequest, DiffResponse
 
 router = APIRouter(prefix="/diff", tags=["Diff"])
+
+
+def check_commit_access(commit: Dict[str, Any], user_id: str) -> bool:
+    if commit.get("owner_id"):
+        return commit["owner_id"] == user_id
+    ds = find_dataset_by_name_or_id(commit.get("dataset_name", ""))
+    if ds:
+        return user_has_dataset_access(ds, user_id)
+    return True
 
 
 class TagRequest(BaseModel):
@@ -60,14 +77,23 @@ class CreateCommitRequest(BaseModel):
 
 
 @router.get("/commits")
-async def list_commits():
-    """List all real dataset version snapshots."""
-    return get_all_commits()
+async def list_commits(
+    current_user: UserModel = Depends(get_current_user),
+):
+    """List all real dataset version snapshots accessible to current user."""
+    return [c for c in get_all_commits() if check_commit_access(c, current_user.id)]
 
 
 @router.post("/commits")
-async def create_snapshot_commit(req: CreateCommitRequest):
+async def create_snapshot_commit(
+    req: CreateCommitRequest,
+    current_user: UserModel = Depends(get_current_user),
+):
     """Create a new version snapshot in the immutable DAG."""
+    record = find_dataset_by_name_or_id(req.dataset_name)
+    if record:
+        check_dataset_access(record, current_user.id)
+
     # Generate content-addressed hash based on message, dataset_name, and timestamp
     h = hashlib.sha256(f"{req.dataset_name}_{req.message}_{req.version_tag}".encode()).hexdigest()
 
@@ -77,22 +103,29 @@ async def create_snapshot_commit(req: CreateCommitRequest):
         parent_hash=req.parent_hash,
         version_tag=req.version_tag or "v1.1.0",
         message=req.message,
-        author=req.author or "James Uchechi",
+        author=current_user.email,
         delta_rows=req.delta_rows or "+0 rows",
         delta_columns=req.delta_columns or "+0 cols",
         added_cols=req.added_cols,
         removed_cols=req.removed_cols,
         modified_cols=req.modified_cols,
+        owner_id=current_user.id,
     )
     return commit
 
 
 @router.post("/commits/{commit_id}/rollback")
-async def rollback_to_commit(commit_id: str):
+async def rollback_to_commit(
+    commit_id: str,
+    current_user: UserModel = Depends(get_current_user),
+):
     """Rollback dataset working pointer to historical commit, recording a rollback snapshot."""
     target_commit = get_commit_by_id(commit_id)
     if not target_commit:
         raise HTTPException(status_code=404, detail="Target commit snapshot not found")
+
+    if not check_commit_access(target_commit, current_user.id):
+        raise HTTPException(status_code=403, detail="Forbidden: You do not have access to this commit")
 
     new_version_tag = f"rollback-{target_commit['version']}"
     rollback_msg = f"Rollback to {target_commit['version']} ({target_commit['hash']}): {target_commit['message']}"
@@ -104,12 +137,13 @@ async def rollback_to_commit(commit_id: str):
         parent_hash=target_commit.get("full_hash"),
         version_tag=new_version_tag,
         message=rollback_msg,
-        author="James Uchechi",
+        author=current_user.email,
         delta_rows=f"Reverted to {target_commit.get('deltaRows', 'prior state')}",
         delta_columns=target_commit.get("deltaColumns", "+0 cols"),
         added_cols=target_commit.get("diffSummary", {}).get("addedCols"),
         removed_cols=target_commit.get("diffSummary", {}).get("removedCols"),
         modified_cols=target_commit.get("diffSummary", {}).get("modifiedCols"),
+        owner_id=current_user.id,
     )
     return {
         "status": "rolled_back",
@@ -120,57 +154,105 @@ async def rollback_to_commit(commit_id: str):
 
 
 @router.post("/commits/{commit_id}/tags")
-async def add_tag(commit_id: str, req: TagRequest):
+async def add_tag(
+    commit_id: str,
+    req: TagRequest,
+    current_user: UserModel = Depends(get_current_user),
+):
     """Add a tag/release alias to a version commit."""
-    c = add_tag_to_commit(commit_id, req.tag)
-    if not c:
+    target = get_commit_by_id(commit_id)
+    if not target:
         raise HTTPException(status_code=404, detail="Commit not found")
+    if not check_commit_access(target, current_user.id):
+        raise HTTPException(status_code=403, detail="Forbidden: You do not have access to this commit")
+
+    c = add_tag_to_commit(commit_id, req.tag)
     return {"message": f"Tag '{req.tag}' added", "commit": c}
 
 
 @router.delete("/commits/{commit_id}/tags/{tag}")
-async def remove_tag(commit_id: str, tag: str):
+async def remove_tag(
+    commit_id: str,
+    tag: str,
+    current_user: UserModel = Depends(get_current_user),
+):
     """Remove a tag from a version commit."""
-    c = remove_tag_from_commit(commit_id, tag)
-    if not c:
+    target = get_commit_by_id(commit_id)
+    if not target:
         raise HTTPException(status_code=404, detail="Commit not found")
+    if not check_commit_access(target, current_user.id):
+        raise HTTPException(status_code=403, detail="Forbidden: You do not have access to this commit")
+
+    c = remove_tag_from_commit(commit_id, tag)
     return {"message": f"Tag '{tag}' removed", "commit": c}
 
 
 @router.post("/commits/{commit_id}/pin")
-async def pin_commit(commit_id: str, req: PinRequest):
+async def pin_commit(
+    commit_id: str,
+    req: PinRequest,
+    current_user: UserModel = Depends(get_current_user),
+):
     """Toggle or set pin protection on a commit to guard against garbage collection."""
-    c = toggle_commit_pin(commit_id, req.is_pinned)
-    if not c:
+    target = get_commit_by_id(commit_id)
+    if not target:
         raise HTTPException(status_code=404, detail="Commit not found")
+    if not check_commit_access(target, current_user.id):
+        raise HTTPException(status_code=403, detail="Forbidden: You do not have access to this commit")
+
+    c = toggle_commit_pin(commit_id, req.is_pinned)
     status_str = "pinned" if c.get("is_pinned") else "unpinned"
     return {"message": f"Commit {commit_id} is now {status_str}", "commit": c}
 
 
 @router.put("/commits/{commit_id}/permissions")
-async def set_permissions(commit_id: str, req: PermissionRequest):
+async def set_permissions(
+    commit_id: str,
+    req: PermissionRequest,
+    current_user: UserModel = Depends(get_current_user),
+):
     """Set version-level access control: public, workspace, or private_draft."""
-    c = update_commit_permissions(commit_id, req.access_level)
-    if not c:
+    target = get_commit_by_id(commit_id)
+    if not target:
         raise HTTPException(status_code=404, detail="Commit not found")
+    if not check_commit_access(target, current_user.id):
+        raise HTTPException(status_code=403, detail="Forbidden: You do not have access to this commit")
+
+    c = update_commit_permissions(commit_id, req.access_level)
     return {"message": f"Access level set to '{c.get('access_level')}'", "commit": c}
 
 
 @router.put("/commits/{commit_id}/metadata")
-async def update_metadata(commit_id: str, req: MetadataRequest):
+async def update_metadata(
+    commit_id: str,
+    req: MetadataRequest,
+    current_user: UserModel = Depends(get_current_user),
+):
     """Add or update custom key-value version metadata."""
-    c = update_commit_metadata(commit_id, req.metadata)
-    if not c:
+    target = get_commit_by_id(commit_id)
+    if not target:
         raise HTTPException(status_code=404, detail="Commit not found")
+    if not check_commit_access(target, current_user.id):
+        raise HTTPException(status_code=403, detail="Forbidden: You do not have access to this commit")
+
+    c = update_commit_metadata(commit_id, req.metadata)
     return {"message": "Custom metadata updated", "commit": c}
 
 
 @router.post("/commits/{commit_id}/bump-semver")
-async def bump_semver(commit_id: str, req: BumpSemverRequest):
+async def bump_semver(
+    commit_id: str,
+    req: BumpSemverRequest,
+    current_user: UserModel = Depends(get_current_user),
+):
     """Bump semantic version tag for a commit (patch, minor, major)."""
-    c = bump_commit_semver(commit_id, req.bump_type)
-    if not c:
+    target = get_commit_by_id(commit_id)
+    if not target:
         raise HTTPException(status_code=404, detail="Commit not found")
+    if not check_commit_access(target, current_user.id):
+        raise HTTPException(status_code=403, detail="Forbidden: You do not have access to this commit")
+
+    c = bump_commit_semver(commit_id, req.bump_type)
     return {"message": f"Bumped to {c.get('version')}", "commit": c}
 
 
@@ -192,7 +274,11 @@ def _get_rows_for_commit(commit: Dict[str, Any]) -> List[Dict[str, Any]]:
 
 
 @router.get("/detailed_compare")
-async def detailed_compare(base_id: str, target_id: str):
+async def detailed_compare(
+    base_id: str,
+    target_id: str,
+    current_user: UserModel = Depends(get_current_user),
+):
     """Compute comprehensive multi-dimensional diff including statistical distribution shifts,
     missingness deltas, duplicate row deltas, smart column renames, and categorical domain shifts."""
     c_base = get_commit_by_id(base_id)
@@ -200,6 +286,9 @@ async def detailed_compare(base_id: str, target_id: str):
 
     if not c_base or not c_target:
         raise HTTPException(status_code=404, detail="One or both commit snapshots not found")
+
+    if not check_commit_access(c_base, current_user.id) or not check_commit_access(c_target, current_user.id):
+        raise HTTPException(status_code=403, detail="Forbidden: You do not have access to these commits")
 
     rows_base = _get_rows_for_commit(c_base)
     rows_target = _get_rows_for_commit(c_target)
@@ -238,6 +327,7 @@ async def export_diff_report(
     base_id: str,
     target_id: str,
     format: str = Query("markdown", description="Format: markdown or json"),
+    current_user: UserModel = Depends(get_current_user),
 ):
     """Export audit diff report between two versions in Markdown or JSON format."""
     c_base = get_commit_by_id(base_id)
@@ -246,7 +336,10 @@ async def export_diff_report(
     if not c_base or not c_target:
         raise HTTPException(status_code=404, detail="One or both commit snapshots not found")
 
-    detailed = await detailed_compare(base_id, target_id)
+    if not check_commit_access(c_base, current_user.id) or not check_commit_access(c_target, current_user.id):
+        raise HTTPException(status_code=403, detail="Forbidden: You do not have access to these commits")
+
+    detailed = await detailed_compare(base_id, target_id, current_user=current_user)
 
     if format.lower() == "json":
         import json
@@ -265,8 +358,15 @@ async def export_diff_report(
 
 
 @router.post("", response_model=DiffResponse)
-async def diff_versions(req: DiffRequest):
+async def diff_versions(
+    req: DiffRequest,
+    current_user: UserModel = Depends(get_current_user),
+):
     """Compute structural and statistical diff between two dataset versions."""
+    record = find_dataset_by_name_or_id(req.dataset_name)
+    if record:
+        check_dataset_access(record, current_user.id)
+
     diff_result = compute_schema_diff([], [])
     return DiffResponse(
         dataset_name=req.dataset_name,
@@ -279,15 +379,17 @@ async def diff_versions(req: DiffRequest):
 
 
 @router.get("/lineage")
-async def get_lineage_graph():
+async def get_lineage_graph(
+    current_user: UserModel = Depends(get_current_user),
+):
     """Retrieve full provenance lineage graph nodes and edges across datasets, transformations, and models."""
-    commits = get_all_commits()
-    from strata_api.routers.datasets import _datasets_db
+    commits = [c for c in get_all_commits() if check_commit_access(c, current_user.id)]
+    user_datasets = {d_id: d for d_id, d in _datasets_db.items() if user_has_dataset_access(d, current_user.id)}
 
     nodes = []
     edges = []
 
-    for d_id, d in _datasets_db.items():
+    for d_id, d in user_datasets.items():
         nodes.append({
             "id": f"dataset_{d_id}",
             "label": d.get("filename", d_id),
@@ -315,7 +417,7 @@ async def get_lineage_graph():
                 "label": "derived",
             })
         else:
-            matched_dataset = next((d_id for d_id, d in _datasets_db.items() if d.get("filename") == c.get("dataset_name")), None)
+            matched_dataset = next((d_id for d_id, d in user_datasets.items() if d.get("filename") == c.get("dataset_name")), None)
             if matched_dataset:
                 edges.append({
                     "source": f"dataset_{matched_dataset}",

@@ -1,8 +1,10 @@
-"""FastAPI Router for Git-style dataset branching, 3-way merge conflict resolution, and column/row blame."""
-
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+
+from strata_api.models.user import UserModel
+from strata_api.routers.auth import get_current_user
+from strata_api.routers.datasets import check_dataset_access, find_dataset_by_name_or_id
 from strata_api.versioning.branches import (
     list_branches,
     get_active_branch,
@@ -41,7 +43,10 @@ class MergeBranchRequest(BaseModel):
 
 
 @router.get("")
-async def get_branches(dataset_name: Optional[str] = Query(None, description="Target dataset name")):
+async def get_branches(
+    dataset_name: Optional[str] = Query(None, description="Target dataset name"),
+    current_user: UserModel = Depends(get_current_user),
+):
     """List all branches for a dataset, indicating active branch and head commit info."""
     if not dataset_name:
         return {
@@ -50,6 +55,9 @@ async def get_branches(dataset_name: Optional[str] = Query(None, description="Ta
             "branches": [],
             "total_branches": 0,
         }
+    ds = find_dataset_by_name_or_id(dataset_name)
+    if ds:
+        check_dataset_access(ds, current_user.id)
     try:
         branches = list_branches(dataset_name)
         active = get_active_branch(dataset_name)
@@ -64,14 +72,20 @@ async def get_branches(dataset_name: Optional[str] = Query(None, description="Ta
 
 
 @router.post("")
-async def create_new_branch(req: CreateBranchRequest):
+async def create_new_branch(
+    req: CreateBranchRequest,
+    current_user: UserModel = Depends(get_current_user),
+):
     """Create a new Git-style branch for isolated experimentation or transformation."""
+    ds = find_dataset_by_name_or_id(req.dataset_name)
+    if ds:
+        check_dataset_access(ds, current_user.id)
     try:
         b = create_branch(
             dataset_name=req.dataset_name,
             branch_name=req.branch_name,
             from_commit_or_branch=req.from_commit_or_branch,
-            author=req.author or "James Uchechi",
+            author=req.author or current_user.full_name,
             description=req.description,
         )
         return {"message": f"Branch '{req.branch_name}' created successfully", "branch": b}
@@ -80,8 +94,14 @@ async def create_new_branch(req: CreateBranchRequest):
 
 
 @router.post("/checkout")
-async def checkout_active_branch(req: CheckoutBranchRequest):
+async def checkout_active_branch(
+    req: CheckoutBranchRequest,
+    current_user: UserModel = Depends(get_current_user),
+):
     """Switch active working branch for dataset."""
+    ds = find_dataset_by_name_or_id(req.dataset_name)
+    if ds:
+        check_dataset_access(ds, current_user.id)
     try:
         b = checkout_branch(req.dataset_name, req.branch_name)
         return {"message": f"Switched to branch '{req.branch_name}'", "active_branch": b}
@@ -93,8 +113,12 @@ async def checkout_active_branch(req: CheckoutBranchRequest):
 async def delete_existing_branch(
     branch_name: str,
     dataset_name: str = Query(..., description="Target dataset name"),
+    current_user: UserModel = Depends(get_current_user),
 ):
     """Delete a non-default branch."""
+    ds = find_dataset_by_name_or_id(dataset_name)
+    if ds:
+        check_dataset_access(ds, current_user.id)
     try:
         delete_branch(dataset_name, branch_name)
         return {"message": f"Branch '{branch_name}' deleted"}
@@ -107,9 +131,13 @@ async def compare_branches(
     target_branch: str = Query("main", description="Target branch (ours)"),
     source_branch: str = Query("staging", description="Source branch to merge in (theirs)"),
     dataset_name: str = Query(..., description="Dataset name"),
+    current_user: UserModel = Depends(get_current_user),
 ):
     """Preview 3-way merge between target and source branches against their Lowest Common Ancestor (LCA).
     Detects clean auto-mergeable column additions as well as schema conflicts."""
+    ds = find_dataset_by_name_or_id(dataset_name)
+    if ds:
+        check_dataset_access(ds, current_user.id)
     try:
         comparison = compute_three_way_merge(
             dataset_name=dataset_name,
@@ -122,8 +150,14 @@ async def compare_branches(
 
 
 @router.post("/merge")
-async def merge_branches(req: MergeBranchRequest):
+async def merge_branches(
+    req: MergeBranchRequest,
+    current_user: UserModel = Depends(get_current_user),
+):
     """Execute 3-way merge from source into target branch, producing an immutable merge commit."""
+    ds = find_dataset_by_name_or_id(req.dataset_name)
+    if ds:
+        check_dataset_access(ds, current_user.id)
     try:
         result = execute_merge(
             dataset_name=req.dataset_name,
@@ -131,7 +165,7 @@ async def merge_branches(req: MergeBranchRequest):
             source_branch=req.source_branch,
             strategy=req.strategy,
             resolutions=req.resolutions,
-            author=req.author or "James Uchechi",
+            author=req.author or current_user.full_name,
             message=req.message,
         )
         return result
@@ -143,6 +177,7 @@ async def merge_branches(req: MergeBranchRequest):
 async def get_dataset_blame(
     dataset_name: Optional[str] = Query(None, description="Dataset name"),
     commit_id: Optional[str] = Query(None, description="Optional target commit hash"),
+    current_user: UserModel = Depends(get_current_user),
 ):
     """Retrieve column-level and row-level attribution history (who introduced what, when, and in which commit)."""
     if not dataset_name:
@@ -153,6 +188,9 @@ async def get_dataset_blame(
             "column_blame": [],
             "row_sample_blame": [],
         }
+    ds = find_dataset_by_name_or_id(dataset_name)
+    if ds:
+        check_dataset_access(ds, current_user.id)
     try:
         blame_data = compute_blame(dataset_name, commit_id)
         return blame_data

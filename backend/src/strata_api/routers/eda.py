@@ -2,14 +2,16 @@
 
 import math
 from typing import Any, Dict, List, Optional
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
 from pydantic import BaseModel
 import polars as pl
 import pandas as pd
 import numpy as np
 from scipy import stats
 
-from strata_api.routers.datasets import _datasets_db
+from strata_api.models.user import UserModel
+from strata_api.routers.auth import get_current_user
+from strata_api.routers.datasets import _datasets_db, check_dataset_access
 
 router = APIRouter(prefix="/eda", tags=["EDA & Hypothesis Testing"])
 
@@ -22,7 +24,10 @@ class HypothesisTestRequest(BaseModel):
 
 
 @router.get("/{dataset_id}")
-async def get_deep_eda_dossier(dataset_id: str):
+async def get_deep_eda_dossier(
+    dataset_id: str,
+    current_user: UserModel = Depends(get_current_user),
+):
     """Generate comprehensive EDA dossier: correlation matrix, multicollinearity, pairplot data, and distribution skewness."""
     record = _datasets_db.get(dataset_id)
     if not record:
@@ -32,6 +37,8 @@ async def get_deep_eda_dossier(dataset_id: str):
                 break
     if not record:
         raise HTTPException(status_code=404, detail="Dataset not found")
+
+    check_dataset_access(record, current_user.id)
 
     file_path = record["file_path"]
     fmt = record.get("format", "").lower()
@@ -140,6 +147,7 @@ async def get_deep_eda_dossier(dataset_id: str):
 async def run_statistical_hypothesis_test(
     dataset_id: str,
     req: HypothesisTestRequest,
+    current_user: UserModel = Depends(get_current_user),
 ):
     """Execute hypothesis tests (Student's t-test, ANOVA, Chi-Square, Mann-Whitney) with plain-English takeaway."""
     record = _datasets_db.get(dataset_id)
@@ -150,6 +158,8 @@ async def run_statistical_hypothesis_test(
                 break
     if not record:
         raise HTTPException(status_code=404, detail="Dataset not found")
+
+    check_dataset_access(record, current_user.id)
 
     file_path = record["file_path"]
     fmt = record.get("format", "").lower()

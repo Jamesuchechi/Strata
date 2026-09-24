@@ -5,7 +5,7 @@ from pydantic import BaseModel
 
 
 class QueryRequest(BaseModel):
-    view_name: str
+    view_name: Optional[str] = None
     sql: Optional[str] = None
     natural_language_question: Optional[str] = None
     limit: int = 500

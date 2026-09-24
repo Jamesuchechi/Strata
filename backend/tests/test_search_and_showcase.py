@@ -6,6 +6,7 @@ import pytest
 from httpx import AsyncClient, ASGITransport
 from strata_api.main import create_app
 from strata_api.routers.datasets import seed_default_datasets_if_needed
+from tests.conftest import AUTH_HEADERS_A
 
 app = create_app()
 
@@ -19,7 +20,7 @@ def setup_datasets():
 async def test_semantic_vector_search():
     """Test natural language vector search and scoring over dataset content (10.4)."""
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+    async with AsyncClient(transport=transport, base_url="http://test", headers=AUTH_HEADERS_A) as ac:
         resp = await ac.get(
             "/api/discovery/semantic-search",
             params={"q": "customer churn rate and monthly charges tenure"}
@@ -37,7 +38,7 @@ async def test_semantic_vector_search():
 async def test_schema_column_search():
     """Test schema-based column name and type search (10.2)."""
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+    async with AsyncClient(transport=transport, base_url="http://test", headers=AUTH_HEADERS_A) as ac:
         resp = await ac.get(
             "/api/discovery/semantic-search",
             params={"column": "customer_id"}
@@ -53,7 +54,7 @@ async def test_schema_column_search():
 async def test_favorites_and_recents():
     """Test favorites toggle and recents history tracking (10.6)."""
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+    async with AsyncClient(transport=transport, base_url="http://test", headers=AUTH_HEADERS_A) as ac:
         # 1. Star / Favorite
         star_resp = await ac.post("/api/discovery/favorites/churn_demo")
         assert star_resp.status_code == 200
@@ -83,7 +84,7 @@ async def test_favorites_and_recents():
 async def test_dataset_recommendations():
     """Test automated 'Teams that used this also explored' recommendations (10.7)."""
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+    async with AsyncClient(transport=transport, base_url="http://test", headers=AUTH_HEADERS_A) as ac:
         resp = await ac.get("/api/discovery/recommendations/churn_demo")
         assert resp.status_code == 200
         recs = resp.json()
@@ -97,7 +98,7 @@ async def test_dataset_recommendations():
 async def test_showcase_gallery_and_filters():
     """Test public showcase gallery listing, domain filter, and sorting (11.2, 11.6)."""
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+    async with AsyncClient(transport=transport, base_url="http://test", headers=AUTH_HEADERS_A) as ac:
         # Full list
         resp = await ac.get("/api/showcase")
         assert resp.status_code == 200
@@ -117,7 +118,7 @@ async def test_showcase_gallery_and_filters():
 async def test_showcase_star_download_and_citations():
     """Test starring, download tracking, and academic citations (11.4, 11.6)."""
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+    async with AsyncClient(transport=transport, base_url="http://test", headers=AUTH_HEADERS_A) as ac:
         dataset_id = "showcase_climate_risk"
 
         # Star toggle
@@ -150,7 +151,7 @@ async def test_showcase_star_download_and_citations():
 async def test_standard_licenses():
     """Test standardized license catalog retrieval (11.5)."""
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+    async with AsyncClient(transport=transport, base_url="http://test", headers=AUTH_HEADERS_A) as ac:
         resp = await ac.get("/api/showcase/licenses")
         assert resp.status_code == 200
         licenses = resp.json()["licenses"]
@@ -165,7 +166,7 @@ async def test_standard_licenses():
 async def test_showcase_dataset_forking():
     """Test one-click public dataset forking into active user catalog (11.7)."""
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+    async with AsyncClient(transport=transport, base_url="http://test", headers=AUTH_HEADERS_A) as ac:
         dataset_id = "showcase_fintech_fraud"
         resp = await ac.post(f"/api/showcase/{dataset_id}/fork")
         assert resp.status_code == 200

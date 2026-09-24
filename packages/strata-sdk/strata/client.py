@@ -9,9 +9,12 @@ class StrataClient:
     """Client for interacting with the Strata backend API."""
 
     def __init__(self, base_url: Optional[str] = None, api_key: Optional[str] = None):
-        self.base_url = base_url or os.getenv("STRATA_API_URL", "http://localhost:8000/api")
+        self.base_url = (base_url or os.getenv("STRATA_API_URL", "http://localhost:8000/api")).rstrip("/")
         self.api_key = api_key or os.getenv("STRATA_API_KEY", "")
-        self._client = httpx.Client(base_url=self.base_url, timeout=60.0)
+        headers = {}
+        if self.api_key:
+            headers["X-API-Key"] = self.api_key
+        self._client = httpx.Client(base_url=self.base_url, headers=headers, timeout=60.0)
 
     def preview_file(self, file_path: str) -> Dict[str, Any]:
         """Upload a file to the preview endpoint."""

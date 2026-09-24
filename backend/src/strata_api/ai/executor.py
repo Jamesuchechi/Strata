@@ -1,7 +1,7 @@
 """Sandboxed query and analytical code runner."""
 
 from typing import Any, Dict, List
-from strata_api.core.duckdb_engine import DuckDBEngine
+from strata_api.core.duckdb_engine import DuckDBEngine, validate_sql
 
 
 class QueryExecutor:
@@ -18,6 +18,7 @@ class QueryExecutor:
             clean_sql = f"{clean_sql} LIMIT {limit}"
 
         try:
+            validate_sql(sql, self.engine.conn)
             results = self.engine.query(clean_sql)
             columns = list(results[0].keys()) if results else []
             return {

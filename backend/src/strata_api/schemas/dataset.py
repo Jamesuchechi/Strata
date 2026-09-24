@@ -36,6 +36,7 @@ class TransformOperation(BaseModel):
     value: Optional[Any] = None
     target_type: Optional[str] = None  # "Int64", "Float64", "String", "Boolean"
     operator: Optional[str] = None  # ">", "<", "==", "!=", ">=", "<="
+    code: Optional[str] = None
 
 
 class DatasetTransformRequest(BaseModel):

@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     JWT_SECRET_KEY: str = "strata_super_secret_jwt_key_development_only_change_in_prod"
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
+    RATE_LIMIT_ENABLED: bool = True
 
     # Storage (S3 / MinIO / Local)
     STORAGE_BACKEND: str = "local"  # "local" or "s3"
@@ -47,6 +48,16 @@ class Settings(BaseSettings):
     ANTHROPIC_API_KEY: str = ""
     GEMINI_API_KEY: str = ""
     DEFAULT_LLM_MODEL: str = "gemini-2.5-flash"
+
+    # Email Delivery (Resend / SMTP / Console)
+    EMAIL_PROVIDER: str = "console"  # "resend", "smtp", "console"
+    RESEND_API_KEY: str = ""
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM: str = "noreply@strata.ai"
+    APP_BASE_URL: str = "http://localhost:3000"
 
     model_config = SettingsConfigDict(
         env_file=".env",

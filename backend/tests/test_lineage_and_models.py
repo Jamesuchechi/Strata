@@ -3,8 +3,9 @@
 import pytest
 from fastapi.testclient import TestClient
 from strata_api.main import create_app
+from tests.conftest import AUTH_HEADERS_A
 
-client = TestClient(create_app())
+client = TestClient(create_app(), headers=AUTH_HEADERS_A)
 
 
 def test_lineage_graph_and_traversal():

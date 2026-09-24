@@ -4,9 +4,11 @@ import os
 import hashlib
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 import polars as pl
 
+from strata_api.models.user import UserModel
+from strata_api.routers.auth import get_current_user
 from strata_api.routers.datasets import (
     _datasets_db,
     get_storage_dir,
@@ -33,10 +35,11 @@ _billing_state = {
 
 
 @router.get("/usage")
-async def get_usage_and_plan():
+async def get_usage_and_plan(current_user: UserModel = Depends(get_current_user)):
     """Retrieve active plan details, storage consumption, dataset count, and compute quotas."""
-    total_bytes = sum(d.get("size_bytes", 0) for d in _datasets_db.values())
-    dataset_count = len(_datasets_db)
+    user_datasets = [d for d in _datasets_db.values() if not d.get("owner_id") or d["owner_id"] == current_user.id]
+    total_bytes = sum(d.get("size_bytes", 0) for d in user_datasets)
+    dataset_count = len(user_datasets)
 
     storage_pct = round((total_bytes / _billing_state["storage_limit_bytes"]) * 100, 2)
     dataset_pct = round((dataset_count / _billing_state["dataset_limit"]) * 100, 2)
@@ -104,7 +107,10 @@ class UpgradePlanRequest(BaseModel):
 
 
 @router.post("/upgrade")
-async def upgrade_plan(req: UpgradePlanRequest):
+async def upgrade_plan(
+    req: UpgradePlanRequest,
+    current_user: UserModel = Depends(get_current_user),
+):
     """Simulate upgrading or changing plan tier."""
     if req.tier == "pro":
         _billing_state["current_plan"] = "Pro Researcher"
@@ -128,6 +134,6 @@ async def upgrade_plan(req: UpgradePlanRequest):
 
 
 @router.post("/seed-samples")
-async def seed_domain_sample_datasets():
+async def seed_domain_sample_datasets(current_user: UserModel = Depends(get_current_user)):
     """No-op: Sample seeding is disabled in production."""
     return {"message": "Sample datasets are disabled. Upload your datasets via /datasets/upload or connectors.", "seeded_datasets": []}

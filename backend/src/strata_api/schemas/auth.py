@@ -50,9 +50,15 @@ class UserResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class RefreshTokenRequest(BaseModel):
+    """Payload for refreshing an access token."""
+    refresh_token: Optional[str] = Field(None, description="Long-lived refresh token")
+
+
 class TokenResponse(BaseModel):
     """Authentication token response with embedded user profile."""
     access_token: str
     token_type: str = "bearer"
     expires_in: int
     user: UserResponse
+    refresh_token: Optional[str] = None

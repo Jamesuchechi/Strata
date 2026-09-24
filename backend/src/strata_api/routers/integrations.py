@@ -4,8 +4,12 @@ Pillar 12: 12.1, 12.2, 12.3, 12.4, 12.5, 12.6, 12.7, 12.8, 12.9, 12.10
 
 from typing import Dict, List, Optional, Any
 from datetime import datetime, timezone
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
+
+from strata_api.models.user import UserModel
+from strata_api.routers.auth import get_current_user
+from strata_api.routers.datasets import _datasets_db, find_dataset_by_name_or_id, check_dataset_access
 
 router = APIRouter(prefix="/integrations", tags=["Integrations"])
 
@@ -175,7 +179,9 @@ class MLflowSyncRequest(BaseModel):
 # ---------------------------------------------------------------------------
 
 @router.get("/status")
-async def get_integrations_status():
+async def get_integrations_status(
+    current_user: UserModel = Depends(get_current_user),
+):
     """List status of all ecosystem connectors and configured webhooks (Pillar 12)."""
     return {
         "connectors": [
@@ -197,14 +203,22 @@ async def get_integrations_status():
 async def get_code_templates(
     dataset_name: str = "my_dataset.csv",
     version: str = "main",
+    current_user: UserModel = Depends(get_current_user),
 ):
     """Generate production integration boilerplate for Airflow, Prefect, dbt, Jupyter, and MLflow (Pillar 12.1, 12.5, 12.6, 12.7)."""
+    record = find_dataset_by_name_or_id(dataset_name)
+    if record:
+        check_dataset_access(record, current_user.id)
+
     templates = _generate_integration_code(dataset_name, version)
     return {"dataset_name": dataset_name, "version": version, "templates": templates}
 
 
 @router.post("/webhooks/test")
-async def test_webhook_alert(req: WebhookTestRequest):
+async def test_webhook_alert(
+    req: WebhookTestRequest,
+    current_user: UserModel = Depends(get_current_user),
+):
     """Dispatch a test webhook alert payload to Slack, Discord, or Teams (Pillar 12.3)."""
     event_id = f"evt_{int(datetime.now(timezone.utc).timestamp())}"
     event_record = {
@@ -214,12 +228,14 @@ async def test_webhook_alert(req: WebhookTestRequest):
         "payload": {
             "message": req.message,
             "timestamp": datetime.now(timezone.utc).isoformat(),
-            "sender": "Strata Data Science Studio Webhook Dispatcher",
+            "sender": f"Strata Studio ({current_user.email})",
         },
         "status": "delivered",
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
     _integration_events.insert(0, event_record)
+    from strata_api.core.persistence import save_integration_event_to_db
+    save_integration_event_to_db(event_record)
 
     return {
         "status": "sent",
@@ -229,8 +245,15 @@ async def test_webhook_alert(req: WebhookTestRequest):
 
 
 @router.post("/sync/mlflow")
-async def sync_mlflow_lineage(req: MLflowSyncRequest):
+async def sync_mlflow_lineage(
+    req: MLflowSyncRequest,
+    current_user: UserModel = Depends(get_current_user),
+):
     """Synchronize dataset commit hash, metrics, and lineage with remote MLflow server (Pillar 12.6)."""
+    record = find_dataset_by_name_or_id(req.dataset_name)
+    if record:
+        check_dataset_access(record, current_user.id)
+
     sync_id = f"mlflow_sync_{int(datetime.now(timezone.utc).timestamp())}"
     return {
         "status": "synchronized",
@@ -254,8 +277,13 @@ async def sync_wandb_artifacts(
     project: str = "customer-retention",
     artifact_name: str = "churn_dataset_snapshot",
     version_hash: str = "a1f94c8e7b",
+    current_user: UserModel = Depends(get_current_user),
 ):
     """Register immutable Strata version snapshot as a Weights & Biases artifact (Pillar 12.6)."""
+    record = find_dataset_by_name_or_id(artifact_name)
+    if record:
+        check_dataset_access(record, current_user.id)
+
     return {
         "status": "synchronized",
         "wandb_artifact_url": f"https://wandb.ai/{entity}/{project}/artifacts/{artifact_name}/{version_hash[:8]}",
@@ -263,3 +291,4 @@ async def sync_wandb_artifacts(
         "version_hash": version_hash,
         "message": "Weights & Biases artifact registered with upstream Strata dataset commit.",
     }
+

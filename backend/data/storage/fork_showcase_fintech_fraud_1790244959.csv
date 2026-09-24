@@ -1,0 +1,5 @@
+tx_id,timestamp,amount_usd,merchant_category,card_present,device_risk_score,ip_country_match,is_fraudulent
+tx_9f81a702b,2026-03-18T10:14:02Z,1420.5,Crypto,false,0.88,false,1
+tx_3b11894ec,2026-03-18T10:15:33Z,45.2,Grocery,true,0.05,true,0
+tx_c478120fa,2026-03-18T10:16:19Z,890.0,Electronics,false,0.72,true,1
+tx_7e93012bb,2026-03-18T10:17:45Z,12.5,Coffee,true,0.02,true,0

@@ -9,10 +9,12 @@ import uuid
 import hashlib
 from typing import Dict, List, Optional, Any
 from datetime import datetime, timezone
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from strata_api.routers.datasets import _datasets_db, seed_default_datasets_if_needed
+from strata_api.models.user import UserModel
+from strata_api.routers.auth import get_current_user
+from strata_api.routers.datasets import _datasets_db, seed_default_datasets_if_needed, check_dataset_access
 
 router = APIRouter(prefix="/security", tags=["Security, Compliance & Admin Ops"])
 
@@ -50,6 +52,8 @@ def _log_audit_event(actor: str, action: str, target: str, ip_address: str = "12
         "hash": event_hash,
     }
     _audit_trail.append(event)
+    from strata_api.core.persistence import save_audit_event_to_db
+    save_audit_event_to_db(event)
     return event
 
 
@@ -101,7 +105,7 @@ def _mask_phone(val: str) -> str:
 # ---------------------------------------------------------------------------
 
 @router.get("/encryption-status")
-async def get_encryption_status():
+async def get_encryption_status(current_user: UserModel = Depends(get_current_user)):
     """Verify AES-256 at rest and TLS 1.3 in transit cryptographic standards (Pillar 16.1)."""
     return {
         "status": "compliant",
@@ -126,6 +130,7 @@ async def get_audit_logs(
     actor: Optional[str] = Query(None),
     action: Optional[str] = Query(None),
     limit: int = Query(50, le=200),
+    current_user: UserModel = Depends(get_current_user),
 ):
     """Immutable audit trail with cryptographic SHA256 chain verification (Pillar 16.3)."""
     logs = list(_audit_trail)
@@ -151,12 +156,17 @@ async def get_audit_logs(
 
 
 @router.post("/mask-export")
-async def mask_dataset_export(req: PiiMaskRequest):
+async def mask_dataset_export(
+    req: PiiMaskRequest,
+    current_user: UserModel = Depends(get_current_user),
+):
     """Apply column-level PII masking and synthetic redaction on export (Pillar 16.4)."""
     seed_default_datasets_if_needed()
     dataset = _datasets_db.get(req.dataset_id)
     if not dataset:
         raise HTTPException(status_code=404, detail="Dataset not found")
+
+    check_dataset_access(dataset, current_user.id)
 
     import polars as pl
     file_path = dataset.get("file_path")
@@ -183,7 +193,7 @@ async def mask_dataset_export(req: PiiMaskRequest):
             df = df.with_columns(pl.Series(col, names))
             masked_columns.append(col)
 
-    _log_audit_event("james@company.com", "security.pii_mask_export", dataset["filename"], details={"masked_cols": masked_columns})
+    _log_audit_event(current_user.email, "security.pii_mask_export", dataset["filename"], details={"masked_cols": masked_columns})
 
     return {
         "status": "masked",
@@ -195,18 +205,22 @@ async def mask_dataset_export(req: PiiMaskRequest):
 
 
 @router.post("/gdpr-redact")
-async def gdpr_right_to_be_forgotten(req: GdprRedactRequest):
+async def gdpr_right_to_be_forgotten(
+    req: GdprRedactRequest,
+    current_user: UserModel = Depends(get_current_user),
+):
     """Cascading right-to-be-forgotten customer purge across datasets (Pillar 16.5)."""
     seed_default_datasets_if_needed()
     purged_datasets = []
     total_records_purged = 0
 
-    target_ids = req.dataset_ids or list(_datasets_db.keys())
+    target_ids = req.dataset_ids or [k for k, ds in _datasets_db.items() if not ds.get("owner_id") or ds.get("owner_id") == current_user.id]
 
     for d_id in target_ids:
         ds = _datasets_db.get(d_id)
         if not ds:
             continue
+        check_dataset_access(ds, current_user.id)
         file_path = ds.get("file_path")
         if not file_path or not os.path.exists(file_path) or not file_path.endswith(".csv"):
             continue
@@ -227,7 +241,7 @@ async def gdpr_right_to_be_forgotten(req: GdprRedactRequest):
             continue
 
     _log_audit_event(
-        "admin@company.com",
+        current_user.email,
         "compliance.gdpr_purge",
         f"customer:{req.customer_identifier_value}",
         details={"reason": req.reason, "purged": total_records_purged},
@@ -248,10 +262,10 @@ async def gdpr_right_to_be_forgotten(req: GdprRedactRequest):
 # ---------------------------------------------------------------------------
 
 @router.get("/admin/overview")
-async def get_admin_overview():
+async def get_admin_overview(current_user: UserModel = Depends(get_current_user)):
     """Centralized administrator console for user, storage, and resource monitoring (Pillar 17.1)."""
     seed_default_datasets_if_needed()
-    datasets = list(_datasets_db.values())
+    datasets = [d for d in _datasets_db.values() if not d.get("owner_id") or d["owner_id"] == current_user.id]
     total_storage = sum(d.get("size_bytes", 0) for d in datasets)
 
     return {
@@ -270,7 +284,7 @@ async def get_admin_overview():
 
 
 @router.get("/admin/health-metrics")
-async def get_platform_health_metrics():
+async def get_platform_health_metrics(current_user: UserModel = Depends(get_current_user)):
     """Real-time platform health and compute telemetry (Pillar 17.2)."""
     return {
         "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -288,7 +302,7 @@ async def get_platform_health_metrics():
 
 
 @router.get("/admin/rate-limits")
-async def get_rate_limiting_status():
+async def get_rate_limiting_status(current_user: UserModel = Depends(get_current_user)):
     """Token bucket throttling and rate limit telemetry per plan tier (Pillar 17.3)."""
     return {
         "algorithm": "Leaky Bucket / Token Bucket Throttling",
@@ -315,7 +329,7 @@ async def get_rate_limiting_status():
 
 
 @router.get("/admin/queues")
-async def get_worker_queue_observability():
+async def get_worker_queue_observability(current_user: UserModel = Depends(get_current_user)):
     """Worker queue observability: latency, failure rate, and queue depth (Pillar 17.4)."""
     from strata_api.routers.pipelines import _dead_letter_queue, _pipeline_runs
 

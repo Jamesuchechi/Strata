@@ -13,8 +13,9 @@ from strata_sdk.client import StrataClient
 
 def get_client() -> StrataClient:
     api_url = os.environ.get("STRATA_API_URL", "http://127.0.0.1:8000/api")
+    api_key = os.environ.get("STRATA_API_KEY")
     token = os.environ.get("STRATA_API_TOKEN")
-    return StrataClient(base_url=api_url, auth_token=token)
+    return StrataClient(base_url=api_url, api_key=api_key, auth_token=token)
 
 
 def cmd_status(args):
