@@ -23,6 +23,7 @@ import {
   Lock,
 } from "lucide-react";
 import { HeroInteractivePreview } from "@/components/landing/HeroInteractivePreview";
+import { StrataLogo, StrataMark } from "@/components/brand/StrataLogo";
 import { AnalystInteractiveDemo } from "@/components/landing/AnalystInteractiveDemo";
 import { DiffInteractiveDemo } from "@/components/landing/DiffInteractiveDemo";
 
@@ -60,8 +61,8 @@ export default function LandingPage() {
             onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
             className="flex items-center gap-3 group cursor-pointer"
           >
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-[#0061FE] to-[#3B82F6] flex items-center justify-center text-white shadow-[0_4px_14px_rgba(0,97,254,0.35)] group-hover:scale-105 transition-transform duration-200">
-              <Layers className="w-5 h-5" />
+            <div className="relative group-hover:scale-105 transition-transform duration-200">
+              <StrataMark size={36} />
             </div>
             <span className="text-2xl font-bold tracking-tight text-[#1E1915] font-serif">
               Strata
@@ -624,14 +625,9 @@ export default function LandingPage() {
       <footer className="bg-[#FAF8F5] border-t border-[#E8E4DF] py-16 px-6 text-xs text-[#736B63]">
         <div className="max-w-7xl mx-auto grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-8">
           <div className="col-span-2 space-y-3">
-            <div className="flex items-center gap-2.5">
-              <div className="w-7 h-7 rounded-lg bg-[#0061FE] text-white flex items-center justify-center shadow-xs">
-                <Layers className="w-4 h-4" />
-              </div>
-              <span className="text-lg font-bold font-serif text-[#1E1915]">Strata</span>
-            </div>
+            <StrataLogo size="md" />
             <p className="text-xs text-[#736B63] max-w-xs leading-relaxed">
-              Version control for data. The AI-native Data Science Studio & GitHub for datasets.
+              Version control for data. The AI-native Data Science Studio &amp; GitHub for datasets.
             </p>
             <p className="text-[11px] text-[#A89F95] font-mono pt-2">
               &copy; {new Date().getFullYear()} Strata Technologies, Inc. Apache 2.0.

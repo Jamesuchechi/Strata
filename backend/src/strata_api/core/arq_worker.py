@@ -85,6 +85,7 @@ async def run_pipeline_task(
     ctx: Dict[str, Any],
     *,
     pipeline: Dict[str, Any],
+    dataset_record: Dict[str, Any],
     run_id: str,
 ) -> Dict[str, Any]:
     """Execute a pipeline in the ARQ worker process.
@@ -95,6 +96,10 @@ async def run_pipeline_task(
         ARQ context dict (populated by the worker).
     pipeline:
         Serialised pipeline dict (same structure stored in ``_pipelines_db``).
+    dataset_record:
+        The resolved dataset record, serialised by the API process at enqueue
+        time.  The worker has its own empty ``_datasets_db``, so we never look
+        up datasets by ID here — the API hands us everything we need.
     run_id:
         Pre-generated run ID so the caller can reference it immediately.
 
@@ -102,8 +107,6 @@ async def run_pipeline_task(
     -------
     The full run result dict (``status``, ``duration_ms``, …).
     """
-    # Import here to avoid circular imports at module load time.
-    from strata_api.routers.datasets import _datasets_db
     from strata_api.core.persistence import save_pipeline_run_to_db, save_dead_letter_job_to_db
 
     start_iso = datetime.now(timezone.utc).isoformat()
@@ -113,14 +116,12 @@ async def run_pipeline_task(
         return datetime.now(timezone.utc).strftime("%H:%M:%S")
 
     try:
-        target_id = pipeline.get("target_dataset_id")
-        dataset = _datasets_db.get(target_id)
-        if not dataset:
-            raise ValueError(f"Dataset '{target_id}' not found in catalog")
-
-        file_path = dataset.get("file_path")
+        file_path = dataset_record.get("file_path")
         if not file_path or not os.path.exists(file_path):
-            raise ValueError(f"Dataset file missing at '{file_path}'")
+            raise ValueError(
+                f"Dataset file missing at '{file_path}'. "
+                "Ensure the file is accessible from the worker process."
+            )
 
         logs.append(f"[{_ts()}] Initialising ARQ compute sandbox…")
         logs.append(

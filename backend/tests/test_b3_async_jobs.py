@@ -200,11 +200,14 @@ class TestPipelineRunAsync:
             headers=AUTH_HEADERS_A,
         )
         assert resp.status_code == 200, resp.text
-        # Verify enqueue_job was called with pipeline dict as a kwarg
+        # Verify enqueue_job was called with the pipeline dict and resolved dataset_record
         call_kwargs = mock_pool.enqueue_job.call_args[1]
         assert "pipeline" in call_kwargs
         assert call_kwargs["pipeline"]["id"] == "pipe_churn_etl"
         assert "run_id" in call_kwargs
+        # dataset_record must be included so the worker doesn't need _datasets_db
+        assert "dataset_record" in call_kwargs
+        assert call_kwargs["dataset_record"]["filename"] == "customer_churn.csv"
 
 
 # ---------------------------------------------------------------------------

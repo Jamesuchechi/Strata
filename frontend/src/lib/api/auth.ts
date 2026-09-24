@@ -40,21 +40,18 @@ export interface ResetPasswordPayload {
   new_password: string;
 }
 
-// Client-side Profile Storage Helpers (Tokens are safely stored in HttpOnly cookies to prevent XSS)
+// Client-side Profile & Token Storage Helpers
 const USER_KEY = "strata_user_profile";
+const TOKEN_KEY = "strata_access_token";
 
-/**
- * @deprecated Tokens are stored in HttpOnly cookies by the backend. Kept for backwards compatibility.
- */
 export function getStoredToken(): string | null {
-  return null;
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem(TOKEN_KEY);
 }
 
-/**
- * @deprecated Tokens are stored in HttpOnly cookies by the backend. Kept for backwards compatibility.
- */
-export function setStoredToken(_token: string): void {
-  // No-op: Token is managed via HttpOnly secure cookies to prevent XSS
+export function setStoredToken(token: string): void {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(TOKEN_KEY, token);
 }
 
 export function getStoredUser(): User | null {
@@ -76,6 +73,7 @@ export function setStoredUser(user: User): void {
 export function clearStoredAuth(): void {
   if (typeof window === "undefined") return;
   localStorage.removeItem(USER_KEY);
+  localStorage.removeItem(TOKEN_KEY);
 }
 
 // API Endpoints
@@ -94,6 +92,9 @@ export async function registerUser(payload: RegisterPayload): Promise<AuthRespon
 
   const data: AuthResponse = await response.json();
   setStoredUser(data.user);
+  if (data.access_token) {
+    setStoredToken(data.access_token);
+  }
   return data;
 }
 
@@ -112,13 +113,22 @@ export async function loginUser(payload: LoginPayload): Promise<AuthResponse> {
 
   const data: AuthResponse = await response.json();
   setStoredUser(data.user);
+  if (data.access_token) {
+    setStoredToken(data.access_token);
+  }
   return data;
 }
 
 export async function logoutUser(): Promise<void> {
   try {
+    const token = getStoredToken();
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
     await fetch(`${API_BASE}/auth/logout`, {
       method: "POST",
+      headers,
       credentials: "include",
     });
   } finally {
@@ -127,9 +137,14 @@ export async function logoutUser(): Promise<void> {
 }
 
 export async function refreshSession(): Promise<AuthResponse> {
+  const token = getStoredToken();
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
   const response = await fetch(`${API_BASE}/auth/refresh`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers,
     credentials: "include",
   });
 
@@ -140,6 +155,9 @@ export async function refreshSession(): Promise<AuthResponse> {
 
   const data: AuthResponse = await response.json();
   setStoredUser(data.user);
+  if (data.access_token) {
+    setStoredToken(data.access_token);
+  }
   return data;
 }
 
@@ -192,11 +210,16 @@ export async function resetPassword(payload: ResetPasswordPayload): Promise<{ st
 }
 
 export async function getCurrentUser(): Promise<User> {
+  const token = getStoredToken();
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
   const response = await fetch(`${API_BASE}/auth/me`, {
     method: "GET",
-    headers: {
-      "Content-Type": "application/json",
-    },
+    headers,
     credentials: "include",
   });
 

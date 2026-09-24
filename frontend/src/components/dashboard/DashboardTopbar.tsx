@@ -26,6 +26,7 @@ import {
   CreditCard,
 } from "lucide-react";
 import { clearStoredAuth, getStoredUser } from "@/lib/api";
+import { StrataLogo } from "@/components/brand/StrataLogo";
 import { OnboardingModal } from "@/components/onboarding/OnboardingModal";
 import { SdkDocsModal } from "@/components/docs/SdkDocsModal";
 import { ChangelogModal } from "@/components/changelog/ChangelogModal";
@@ -72,14 +73,7 @@ export function DashboardTopbar({
       {/* Left: Brand + Project Switcher */}
       <div className="flex items-center gap-3">
         {/* Brand Mark */}
-        <Link href="/dashboard" className="flex items-center gap-2 group">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-[#0061FE] to-[#3B82F6] flex items-center justify-center text-white shadow-[0_2px_8px_rgba(0,97,254,0.3)] group-hover:scale-105 transition-transform">
-            <Layers className="w-4 h-4" />
-          </div>
-          <span className="font-serif font-bold text-lg text-[#1E1915] hidden sm:inline">
-            Strata
-          </span>
-        </Link>
+        <StrataLogo size="sm" markSize={28} href="/dashboard" />
 
         <span className="text-[#D6D0C7] font-light hidden sm:inline">/</span>
 

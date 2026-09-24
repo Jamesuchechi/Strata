@@ -3,6 +3,20 @@
  */
 
 import { PreviewData, QueryResult } from "./types";
+import { getStoredToken } from "./api/auth";
+
+export async function apiFetch(input: string | URL, init: RequestInit = {}): Promise<Response> {
+  const headers = new Headers(init.headers || {});
+  const token = getStoredToken();
+  if (token && !headers.has("Authorization")) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
+  return fetch(input, {
+    ...init,
+    headers,
+    credentials: init.credentials || "include",
+  });
+}
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
 
@@ -15,7 +29,7 @@ export async function uploadAndPreviewFile(file: File, sheet?: string): Promise<
     url.searchParams.append("sheet", sheet);
   }
 
-  const response = await fetch(url.toString(), {
+  const response = await apiFetch(url.toString(), {
     method: "POST",
     body: formData,
   });
@@ -29,7 +43,7 @@ export async function uploadAndPreviewFile(file: File, sheet?: string): Promise<
 }
 
 export async function fetchDatasets(): Promise<import("./types").DatasetItem[]> {
-  const response = await fetch(`${API_BASE}/datasets`);
+  const response = await apiFetch(`${API_BASE}/datasets`);
   if (!response.ok) {
     throw new Error(`Failed to fetch datasets (${response.status})`);
   }
@@ -41,7 +55,7 @@ export async function fetchDatasetPreview(datasetId: string, sheet?: string): Pr
   if (sheet) {
     url.searchParams.append("sheet", sheet);
   }
-  const response = await fetch(url.toString());
+  const response = await apiFetch(url.toString());
   if (!response.ok) {
     throw new Error(`Failed to fetch dataset preview (${response.status})`);
   }
@@ -49,7 +63,7 @@ export async function fetchDatasetPreview(datasetId: string, sheet?: string): Pr
 }
 
 export async function deleteDataset(datasetId: string): Promise<void> {
-  const response = await fetch(`${API_BASE}/datasets/${datasetId}`, {
+  const response = await apiFetch(`${API_BASE}/datasets/${datasetId}`, {
     method: "DELETE",
   });
   if (!response.ok) {
@@ -58,7 +72,7 @@ export async function deleteDataset(datasetId: string): Promise<void> {
 }
 
 export async function fetchCommits(): Promise<any[]> {
-  const response = await fetch(`${API_BASE}/diff/commits`);
+  const response = await apiFetch(`${API_BASE}/diff/commits`);
   if (!response.ok) {
     throw new Error(`Failed to fetch commits (${response.status})`);
   }
@@ -73,7 +87,7 @@ export async function createSnapshotCommit(payload: {
   added_cols?: string[];
   modified_cols?: string[];
 }): Promise<any> {
-  const response = await fetch(`${API_BASE}/diff/commits`, {
+  const response = await apiFetch(`${API_BASE}/diff/commits`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -85,7 +99,7 @@ export async function createSnapshotCommit(payload: {
 }
 
 export async function rollbackToCommit(commitId: string): Promise<any> {
-  const response = await fetch(`${API_BASE}/diff/commits/${commitId}/rollback`, {
+  const response = await apiFetch(`${API_BASE}/diff/commits/${commitId}/rollback`, {
     method: "POST",
   });
   if (!response.ok) {
@@ -95,7 +109,7 @@ export async function rollbackToCommit(commitId: string): Promise<any> {
 }
 
 export async function compareCommits(baseId: string, targetId: string): Promise<any> {
-  const response = await fetch(`${API_BASE}/diff/compare?base_id=${baseId}&target_id=${targetId}`);
+  const response = await apiFetch(`${API_BASE}/diff/compare?base_id=${baseId}&target_id=${targetId}`);
   if (!response.ok) {
     throw new Error(`Failed to compare snapshots (${response.status})`);
   }
@@ -103,7 +117,7 @@ export async function compareCommits(baseId: string, targetId: string): Promise<
 }
 
 export async function fetchLineageGraph(): Promise<any> {
-  const response = await fetch(`${API_BASE}/diff/lineage`);
+  const response = await apiFetch(`${API_BASE}/diff/lineage`);
   if (!response.ok) {
     throw new Error(`Failed to fetch lineage graph (${response.status})`);
   }
@@ -115,7 +129,7 @@ export async function executeQuery(
   sql?: string,
   naturalLanguageQuestion?: string
 ): Promise<QueryResult> {
-  const response = await fetch(`${API_BASE}/query`, {
+  const response = await apiFetch(`${API_BASE}/query`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -138,7 +152,7 @@ export async function transformDataset(
   operations: any[],
   commitMessage?: string
 ): Promise<any> {
-  const response = await fetch(`${API_BASE}/datasets/${datasetId}/transform`, {
+  const response = await apiFetch(`${API_BASE}/datasets/${datasetId}/transform`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -154,7 +168,7 @@ export async function transformDataset(
 }
 
 export async function createShareLink(datasetId: string): Promise<any> {
-  const response = await fetch(`${API_BASE}/datasets/${datasetId}/share`, {
+  const response = await apiFetch(`${API_BASE}/datasets/${datasetId}/share`, {
     method: "POST",
   });
   if (!response.ok) {
@@ -164,7 +178,7 @@ export async function createShareLink(datasetId: string): Promise<any> {
 }
 
 export async function fetchSharedDataset(token: string): Promise<any> {
-  const response = await fetch(`${API_BASE}/shared/${token}`);
+  const response = await apiFetch(`${API_BASE}/shared/${token}`);
   if (!response.ok) {
     throw new Error(`Shared dataset not found or expired (${response.status})`);
   }
@@ -172,7 +186,7 @@ export async function fetchSharedDataset(token: string): Promise<any> {
 }
 
 export async function fetchDeepEDA(datasetId: string): Promise<any> {
-  const response = await fetch(`${API_BASE}/eda/${datasetId}`);
+  const response = await apiFetch(`${API_BASE}/eda/${datasetId}`);
   if (!response.ok) {
     throw new Error(`Failed to generate EDA dossier (${response.status})`);
   }
@@ -186,7 +200,7 @@ export async function runHypothesisTest(
   groupCol?: string,
   col2?: string
 ): Promise<any> {
-  const response = await fetch(`${API_BASE}/eda/${datasetId}/hypothesis-test`, {
+  const response = await apiFetch(`${API_BASE}/eda/${datasetId}/hypothesis-test`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -209,7 +223,7 @@ export async function trainAutoMLModel(payload: {
   task_type?: string;
   model_family?: string;
 }): Promise<any> {
-  const response = await fetch(`${API_BASE}/automl/train`, {
+  const response = await apiFetch(`${API_BASE}/automl/train`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -222,7 +236,7 @@ export async function trainAutoMLModel(payload: {
 }
 
 export async function convertDatasetFormat(datasetId: string, targetFormat: string): Promise<Blob> {
-  const response = await fetch(`${API_BASE}/datasets/${datasetId}/convert?target_format=${targetFormat}`, {
+  const response = await apiFetch(`${API_BASE}/datasets/${datasetId}/convert?target_format=${targetFormat}`, {
     method: "POST",
   });
   if (!response.ok) {
@@ -233,7 +247,7 @@ export async function convertDatasetFormat(datasetId: string, targetFormat: stri
 
 export async function checkBackendHealth(): Promise<boolean> {
   try {
-    const res = await fetch(`${API_BASE}/health`);
+    const res = await apiFetch(`${API_BASE}/health`);
     const data = await res.json();
     return data.status === "healthy";
   } catch {
@@ -245,7 +259,7 @@ export async function checkBackendHealth(): Promise<boolean> {
 // Versioning Enhancements Client Methods
 // -------------------------------------------------------------
 export async function addCommitTag(commitId: string, tag: string): Promise<any> {
-  const res = await fetch(`${API_BASE}/diff/commits/${commitId}/tags`, {
+  const res = await apiFetch(`${API_BASE}/diff/commits/${commitId}/tags`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ tag }),
@@ -255,7 +269,7 @@ export async function addCommitTag(commitId: string, tag: string): Promise<any> 
 }
 
 export async function removeCommitTag(commitId: string, tag: string): Promise<any> {
-  const res = await fetch(`${API_BASE}/diff/commits/${commitId}/tags/${encodeURIComponent(tag)}`, {
+  const res = await apiFetch(`${API_BASE}/diff/commits/${commitId}/tags/${encodeURIComponent(tag)}`, {
     method: "DELETE",
   });
   if (!res.ok) throw new Error(`Failed to remove tag (${res.status})`);
@@ -263,7 +277,7 @@ export async function removeCommitTag(commitId: string, tag: string): Promise<an
 }
 
 export async function toggleCommitPin(commitId: string, isPinned?: boolean): Promise<any> {
-  const res = await fetch(`${API_BASE}/diff/commits/${commitId}/pin`, {
+  const res = await apiFetch(`${API_BASE}/diff/commits/${commitId}/pin`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ is_pinned: isPinned }),
@@ -273,7 +287,7 @@ export async function toggleCommitPin(commitId: string, isPinned?: boolean): Pro
 }
 
 export async function updateCommitPermissions(commitId: string, accessLevel: string): Promise<any> {
-  const res = await fetch(`${API_BASE}/diff/commits/${commitId}/permissions`, {
+  const res = await apiFetch(`${API_BASE}/diff/commits/${commitId}/permissions`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ access_level: accessLevel }),
@@ -283,7 +297,7 @@ export async function updateCommitPermissions(commitId: string, accessLevel: str
 }
 
 export async function updateCommitMetadata(commitId: string, metadata: Record<string, any>): Promise<any> {
-  const res = await fetch(`${API_BASE}/diff/commits/${commitId}/metadata`, {
+  const res = await apiFetch(`${API_BASE}/diff/commits/${commitId}/metadata`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ metadata }),
@@ -293,7 +307,7 @@ export async function updateCommitMetadata(commitId: string, metadata: Record<st
 }
 
 export async function bumpCommitSemver(commitId: string, bumpType: "patch" | "minor" | "major"): Promise<any> {
-  const res = await fetch(`${API_BASE}/diff/commits/${commitId}/bump-semver`, {
+  const res = await apiFetch(`${API_BASE}/diff/commits/${commitId}/bump-semver`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ bump_type: bumpType }),
@@ -306,13 +320,13 @@ export async function bumpCommitSemver(commitId: string, bumpType: "patch" | "mi
 // Enhanced Diffing & Reports Client Methods
 // -------------------------------------------------------------
 export async function fetchDetailedCompare(baseId: string, targetId: string): Promise<import("./types").DetailedCompareResult> {
-  const res = await fetch(`${API_BASE}/diff/detailed_compare?base_id=${baseId}&target_id=${targetId}`);
+  const res = await apiFetch(`${API_BASE}/diff/detailed_compare?base_id=${baseId}&target_id=${targetId}`);
   if (!res.ok) throw new Error(`Failed to fetch detailed compare (${res.status})`);
   return res.json();
 }
 
 export async function fetchDiffReport(baseId: string, targetId: string, format: "markdown" | "json" = "markdown"): Promise<string | object> {
-  const res = await fetch(`${API_BASE}/diff/export_report?base_id=${baseId}&target_id=${targetId}&format=${format}`);
+  const res = await apiFetch(`${API_BASE}/diff/export_report?base_id=${baseId}&target_id=${targetId}&format=${format}`);
   if (!res.ok) throw new Error(`Failed to export report (${res.status})`);
   if (format === "json") return res.json();
   return res.text();
@@ -322,13 +336,13 @@ export async function fetchDiffReport(baseId: string, targetId: string, format: 
 // Collaboration & Workspaces Client Methods
 // -------------------------------------------------------------
 export async function fetchWorkspaces(): Promise<import("./types").WorkspaceItem[]> {
-  const res = await fetch(`${API_BASE}/workspaces`);
+  const res = await apiFetch(`${API_BASE}/workspaces`);
   if (!res.ok) throw new Error(`Failed to fetch workspaces (${res.status})`);
   return res.json();
 }
 
 export async function createWorkspace(name: string, description?: string): Promise<import("./types").WorkspaceItem> {
-  const res = await fetch(`${API_BASE}/workspaces`, {
+  const res = await apiFetch(`${API_BASE}/workspaces`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name, description }),
@@ -341,13 +355,13 @@ export async function fetchWorkspaceMembers(workspaceId: string): Promise<{
   members: import("./types").WorkspaceMember[];
   pending_invites: import("./types").WorkspaceInvite[];
 }> {
-  const res = await fetch(`${API_BASE}/workspaces/${workspaceId}/members`);
+  const res = await apiFetch(`${API_BASE}/workspaces/${workspaceId}/members`);
   if (!res.ok) throw new Error(`Failed to fetch members (${res.status})`);
   return res.json();
 }
 
 export async function inviteWorkspaceMember(workspaceId: string, email: string, role: string): Promise<any> {
-  const res = await fetch(`${API_BASE}/workspaces/${workspaceId}/invites`, {
+  const res = await apiFetch(`${API_BASE}/workspaces/${workspaceId}/invites`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, role }),
@@ -357,7 +371,7 @@ export async function inviteWorkspaceMember(workspaceId: string, email: string, 
 }
 
 export async function removeWorkspaceMember(workspaceId: string, memberId: string): Promise<any> {
-  const res = await fetch(`${API_BASE}/workspaces/${workspaceId}/members/${memberId}`, {
+  const res = await apiFetch(`${API_BASE}/workspaces/${workspaceId}/members/${memberId}`, {
     method: "DELETE",
   });
   if (!res.ok) throw new Error(`Failed to remove member (${res.status})`);
@@ -365,7 +379,7 @@ export async function removeWorkspaceMember(workspaceId: string, memberId: strin
 }
 
 export async function updateWorkspaceMemberRole(workspaceId: string, memberId: string, role: string): Promise<any> {
-  const res = await fetch(`${API_BASE}/workspaces/${workspaceId}/members/${memberId}/role`, {
+  const res = await apiFetch(`${API_BASE}/workspaces/${workspaceId}/members/${memberId}/role`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ role }),
@@ -375,19 +389,19 @@ export async function updateWorkspaceMemberRole(workspaceId: string, memberId: s
 }
 
 export async function fetchWorkspaceActivity(workspaceId: string = "all"): Promise<import("./types").ActivityFeedItem[]> {
-  const res = await fetch(`${API_BASE}/workspaces/${workspaceId}/activity`);
+  const res = await apiFetch(`${API_BASE}/workspaces/${workspaceId}/activity`);
   if (!res.ok) throw new Error(`Failed to fetch activity feed (${res.status})`);
   return res.json();
 }
 
 export async function fetchWorkspacePermissions(workspaceId: string): Promise<Record<string, string>> {
-  const res = await fetch(`${API_BASE}/workspaces/${workspaceId}/permissions`);
+  const res = await apiFetch(`${API_BASE}/workspaces/${workspaceId}/permissions`);
   if (!res.ok) throw new Error(`Failed to fetch permissions (${res.status})`);
   return res.json();
 }
 
 export async function setDatasetPermission(workspaceId: string, datasetId: string, minRole: string): Promise<any> {
-  const res = await fetch(`${API_BASE}/workspaces/${workspaceId}/permissions`, {
+  const res = await apiFetch(`${API_BASE}/workspaces/${workspaceId}/permissions`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ dataset_id: datasetId, min_role: minRole }),
@@ -419,7 +433,7 @@ export async function searchDatasets(params: {
   if (params.max_rows !== undefined) url.searchParams.append("max_rows", params.max_rows.toString());
   if (params.sort_by) url.searchParams.append("sort_by", params.sort_by);
 
-  const res = await fetch(url.toString());
+  const res = await apiFetch(url.toString());
   if (!res.ok) throw new Error(`Search failed (${res.status})`);
   return res.json();
 }
@@ -428,13 +442,13 @@ export async function searchDatasets(params: {
 // Billing & Onboarding Client Methods
 // -------------------------------------------------------------
 export async function fetchBillingUsage(): Promise<import("./types").BillingUsageResponse> {
-  const res = await fetch(`${API_BASE}/billing/usage`);
+  const res = await apiFetch(`${API_BASE}/billing/usage`);
   if (!res.ok) throw new Error(`Failed to fetch billing usage (${res.status})`);
   return res.json();
 }
 
 export async function upgradePlan(tier: "free" | "pro"): Promise<any> {
-  const res = await fetch(`${API_BASE}/billing/upgrade`, {
+  const res = await apiFetch(`${API_BASE}/billing/upgrade`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ tier }),
@@ -444,7 +458,7 @@ export async function upgradePlan(tier: "free" | "pro"): Promise<any> {
 }
 
 export async function seedDomainSamples(): Promise<any> {
-  const res = await fetch(`${API_BASE}/billing/seed-samples`, {
+  const res = await apiFetch(`${API_BASE}/billing/seed-samples`, {
     method: "POST",
   });
   if (!res.ok) throw new Error(`Failed to seed sample datasets (${res.status})`);
@@ -460,7 +474,7 @@ export async function fetchBranches(datasetName: string): Promise<{
   branches: import("./types").BranchRecord[];
   total_branches: number;
 }> {
-  const res = await fetch(`${API_BASE}/branches?dataset_name=${encodeURIComponent(datasetName)}`);
+  const res = await apiFetch(`${API_BASE}/branches?dataset_name=${encodeURIComponent(datasetName)}`);
   if (!res.ok) throw new Error(`Failed to fetch branches (${res.status})`);
   return res.json();
 }
@@ -472,7 +486,7 @@ export async function createBranch(req: {
   description?: string;
   author?: string;
 }): Promise<any> {
-  const res = await fetch(`${API_BASE}/branches`, {
+  const res = await apiFetch(`${API_BASE}/branches`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(req),
@@ -485,7 +499,7 @@ export async function createBranch(req: {
 }
 
 export async function checkoutBranch(datasetName: string, branchName: string): Promise<any> {
-  const res = await fetch(`${API_BASE}/branches/checkout`, {
+  const res = await apiFetch(`${API_BASE}/branches/checkout`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ dataset_name: datasetName, branch_name: branchName }),
@@ -498,7 +512,7 @@ export async function checkoutBranch(datasetName: string, branchName: string): P
 }
 
 export async function deleteBranch(datasetName: string, branchName: string): Promise<any> {
-  const res = await fetch(`${API_BASE}/branches/${encodeURIComponent(branchName)}?dataset_name=${encodeURIComponent(datasetName)}`, {
+  const res = await apiFetch(`${API_BASE}/branches/${encodeURIComponent(branchName)}?dataset_name=${encodeURIComponent(datasetName)}`, {
     method: "DELETE",
   });
   if (!res.ok) {
@@ -514,7 +528,7 @@ export async function compareBranches(
   sourceBranch: string,
 ): Promise<import("./types").ThreeWayMergeComparison> {
   const url = `${API_BASE}/branches/compare?dataset_name=${encodeURIComponent(datasetName)}&target_branch=${encodeURIComponent(targetBranch)}&source_branch=${encodeURIComponent(sourceBranch)}`;
-  const res = await fetch(url);
+  const res = await apiFetch(url);
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.detail || `Branch comparison failed (${res.status})`);
@@ -531,7 +545,7 @@ export async function mergeBranches(req: {
   message?: string;
   author?: string;
 }): Promise<any> {
-  const res = await fetch(`${API_BASE}/branches/merge`, {
+  const res = await apiFetch(`${API_BASE}/branches/merge`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(req),
@@ -547,7 +561,7 @@ export async function fetchDatasetBlame(datasetName: string, commitId?: string):
   const url = new URL(`${API_BASE}/branches/blame`);
   url.searchParams.append("dataset_name", datasetName);
   if (commitId) url.searchParams.append("commit_id", commitId);
-  const res = await fetch(url.toString());
+  const res = await apiFetch(url.toString());
   if (!res.ok) throw new Error(`Failed to fetch blame data (${res.status})`);
   return res.json();
 }
@@ -556,19 +570,19 @@ export async function fetchDatasetBlame(datasetName: string, commitId?: string):
 // Lineage Ecosystem, Model Registry & Deletion Protection
 // -------------------------------------------------------------
 export async function fetchFullLineageGraph(): Promise<import("./types").LineageGraphResponse> {
-  const res = await fetch(`${API_BASE}/lineage/graph`);
+  const res = await apiFetch(`${API_BASE}/lineage/graph`);
   if (!res.ok) throw new Error(`Failed to fetch lineage graph (${res.status})`);
   return res.json();
 }
 
 export async function traceBackwardLineage(assetId: string): Promise<any> {
-  const res = await fetch(`${API_BASE}/lineage/trace/backward/${encodeURIComponent(assetId)}`);
+  const res = await apiFetch(`${API_BASE}/lineage/trace/backward/${encodeURIComponent(assetId)}`);
   if (!res.ok) throw new Error(`Failed to trace backward lineage (${res.status})`);
   return res.json();
 }
 
 export async function traceForwardImpact(assetId: string): Promise<any> {
-  const res = await fetch(`${API_BASE}/lineage/trace/forward/${encodeURIComponent(assetId)}`);
+  const res = await apiFetch(`${API_BASE}/lineage/trace/forward/${encodeURIComponent(assetId)}`);
   if (!res.ok) throw new Error(`Failed to trace forward impact (${res.status})`);
   return res.json();
 }
@@ -577,7 +591,7 @@ export async function fetchRegisteredModels(datasetName?: string): Promise<impor
   const url = datasetName
     ? `${API_BASE}/lineage/models?dataset_name=${encodeURIComponent(datasetName)}`
     : `${API_BASE}/lineage/models`;
-  const res = await fetch(url);
+  const res = await apiFetch(url);
   if (!res.ok) throw new Error(`Failed to fetch registered models (${res.status})`);
   return res.json();
 }
@@ -595,7 +609,7 @@ export async function registerModel(req: {
   hyperparameters?: Record<string, any>;
   status?: string;
 }): Promise<any> {
-  const res = await fetch(`${API_BASE}/lineage/models`, {
+  const res = await apiFetch(`${API_BASE}/lineage/models`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(req),
@@ -608,13 +622,13 @@ export async function registerModel(req: {
 }
 
 export async function checkDeletionProtection(versionHash: string): Promise<import("./types").DeletionProtectionCheck> {
-  const res = await fetch(`${API_BASE}/lineage/protection/check/${encodeURIComponent(versionHash)}`);
+  const res = await apiFetch(`${API_BASE}/lineage/protection/check/${encodeURIComponent(versionHash)}`);
   if (!res.ok) throw new Error(`Failed to check deletion protection (${res.status})`);
   return res.json();
 }
 
 export async function exportOpenLineage(format: "openlineage" | "graphviz"): Promise<any> {
-  const res = await fetch(`${API_BASE}/lineage/export?format=${format}`);
+  const res = await apiFetch(`${API_BASE}/lineage/export?format=${format}`);
   if (!res.ok) throw new Error(`Failed to export lineage (${res.status})`);
   if (format === "graphviz") {
     return res.text();
@@ -644,13 +658,13 @@ export async function searchSemanticDatasets(params: {
   if (params.min_rows !== undefined) url.searchParams.set("min_rows", params.min_rows.toString());
   if (params.max_rows !== undefined) url.searchParams.set("max_rows", params.max_rows.toString());
 
-  const res = await fetch(url.toString());
+  const res = await apiFetch(url.toString());
   if (!res.ok) throw new Error(`Failed to execute semantic search (${res.status})`);
   return res.json();
 }
 
 export async function toggleDatasetFavorite(datasetId: string): Promise<{ dataset_id: string; is_favorite: boolean; total_favorites: number }> {
-  const res = await fetch(`${API_BASE}/discovery/favorites/${encodeURIComponent(datasetId)}`, {
+  const res = await apiFetch(`${API_BASE}/discovery/favorites/${encodeURIComponent(datasetId)}`, {
     method: "POST",
   });
   if (!res.ok) throw new Error(`Failed to toggle favorite (${res.status})`);
@@ -658,13 +672,13 @@ export async function toggleDatasetFavorite(datasetId: string): Promise<{ datase
 }
 
 export async function fetchDatasetFavorites(): Promise<{ favorites: any[]; count: number }> {
-  const res = await fetch(`${API_BASE}/discovery/favorites`);
+  const res = await apiFetch(`${API_BASE}/discovery/favorites`);
   if (!res.ok) throw new Error(`Failed to fetch favorites (${res.status})`);
   return res.json();
 }
 
 export async function recordDatasetRecent(datasetId: string): Promise<any> {
-  const res = await fetch(`${API_BASE}/discovery/recents/${encodeURIComponent(datasetId)}`, {
+  const res = await apiFetch(`${API_BASE}/discovery/recents/${encodeURIComponent(datasetId)}`, {
     method: "POST",
   });
   if (!res.ok) throw new Error(`Failed to record recent visit (${res.status})`);
@@ -672,13 +686,13 @@ export async function recordDatasetRecent(datasetId: string): Promise<any> {
 }
 
 export async function fetchDatasetRecents(): Promise<{ recents: any[]; count: number }> {
-  const res = await fetch(`${API_BASE}/discovery/recents`);
+  const res = await apiFetch(`${API_BASE}/discovery/recents`);
   if (!res.ok) throw new Error(`Failed to fetch recents (${res.status})`);
   return res.json();
 }
 
 export async function fetchDatasetRecommendations(datasetId: string): Promise<import("./types").RecommendationItem[]> {
-  const res = await fetch(`${API_BASE}/discovery/recommendations/${encodeURIComponent(datasetId)}`);
+  const res = await apiFetch(`${API_BASE}/discovery/recommendations/${encodeURIComponent(datasetId)}`);
   if (!res.ok) throw new Error(`Failed to fetch recommendations (${res.status})`);
   return res.json();
 }
@@ -695,7 +709,7 @@ export async function fetchShowcaseDatasets(params?: {
   if (params?.q) url.searchParams.set("q", params.q);
   if (params?.sort_by) url.searchParams.set("sort_by", params.sort_by);
 
-  const res = await fetch(url.toString());
+  const res = await apiFetch(url.toString());
   if (!res.ok) throw new Error(`Failed to fetch showcase datasets (${res.status})`);
   return res.json();
 }
@@ -705,13 +719,13 @@ export async function fetchShowcaseDataset(datasetId: string): Promise<{
   citations: import("./types").CitationResponse;
   embeds: import("./types").EmbedConfigResponse;
 }> {
-  const res = await fetch(`${API_BASE}/showcase/${encodeURIComponent(datasetId)}`);
+  const res = await apiFetch(`${API_BASE}/showcase/${encodeURIComponent(datasetId)}`);
   if (!res.ok) throw new Error(`Failed to fetch showcase item (${res.status})`);
   return res.json();
 }
 
 export async function toggleShowcaseStar(datasetId: string): Promise<{ dataset_id: string; is_starred: boolean; total_stars: number }> {
-  const res = await fetch(`${API_BASE}/showcase/${encodeURIComponent(datasetId)}/star`, {
+  const res = await apiFetch(`${API_BASE}/showcase/${encodeURIComponent(datasetId)}/star`, {
     method: "POST",
   });
   if (!res.ok) throw new Error(`Failed to toggle star (${res.status})`);
@@ -719,7 +733,7 @@ export async function toggleShowcaseStar(datasetId: string): Promise<{ dataset_i
 }
 
 export async function trackShowcaseDownload(datasetId: string): Promise<any> {
-  const res = await fetch(`${API_BASE}/showcase/${encodeURIComponent(datasetId)}/download`, {
+  const res = await apiFetch(`${API_BASE}/showcase/${encodeURIComponent(datasetId)}/download`, {
     method: "POST",
   });
   if (!res.ok) throw new Error(`Failed to track download (${res.status})`);
@@ -727,19 +741,19 @@ export async function trackShowcaseDownload(datasetId: string): Promise<any> {
 }
 
 export async function fetchShowcaseCitation(datasetId: string): Promise<import("./types").CitationResponse> {
-  const res = await fetch(`${API_BASE}/showcase/${encodeURIComponent(datasetId)}/citation`);
+  const res = await apiFetch(`${API_BASE}/showcase/${encodeURIComponent(datasetId)}/citation`);
   if (!res.ok) throw new Error(`Failed to fetch citation (${res.status})`);
   return res.json();
 }
 
 export async function fetchShowcaseEmbedConfig(datasetId: string, theme: "light" | "dark" = "light", showSchema: boolean = true): Promise<import("./types").EmbedConfigResponse> {
-  const res = await fetch(`${API_BASE}/showcase/${encodeURIComponent(datasetId)}/embed-config?theme=${theme}&show_schema=${showSchema}`);
+  const res = await apiFetch(`${API_BASE}/showcase/${encodeURIComponent(datasetId)}/embed-config?theme=${theme}&show_schema=${showSchema}`);
   if (!res.ok) throw new Error(`Failed to fetch embed config (${res.status})`);
   return res.json();
 }
 
 export async function fetchLicensesCatalog(): Promise<{ licenses: import("./types").LicenseItem[] }> {
-  const res = await fetch(`${API_BASE}/showcase/licenses`);
+  const res = await apiFetch(`${API_BASE}/showcase/licenses`);
   if (!res.ok) throw new Error(`Failed to fetch licenses (${res.status})`);
   return res.json();
 }
@@ -751,7 +765,7 @@ export async function forkShowcaseDataset(datasetId: string): Promise<{
   fork_count: number;
   dataset: any;
 }> {
-  const res = await fetch(`${API_BASE}/showcase/${encodeURIComponent(datasetId)}/fork`, {
+  const res = await apiFetch(`${API_BASE}/showcase/${encodeURIComponent(datasetId)}/fork`, {
     method: "POST",
   });
   if (!res.ok) {
@@ -766,19 +780,19 @@ export async function forkShowcaseDataset(datasetId: string): Promise<{
 // -------------------------------------------------------------
 
 export async function fetchPipelines(): Promise<{ pipelines: import("./types").PipelineItem[]; total: number }> {
-  const res = await fetch(`${API_BASE}/pipelines`);
+  const res = await apiFetch(`${API_BASE}/pipelines`);
   if (!res.ok) throw new Error(`Failed to fetch pipelines (${res.status})`);
   return res.json();
 }
 
 export async function fetchPipelineTemplates(): Promise<{ templates: import("./types").PipelineTemplate[] }> {
-  const res = await fetch(`${API_BASE}/pipelines/templates`);
+  const res = await apiFetch(`${API_BASE}/pipelines/templates`);
   if (!res.ok) throw new Error(`Failed to fetch pipeline templates (${res.status})`);
   return res.json();
 }
 
 export async function createPipeline(req: any): Promise<any> {
-  const res = await fetch(`${API_BASE}/pipelines`, {
+  const res = await apiFetch(`${API_BASE}/pipelines`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(req),
@@ -788,7 +802,7 @@ export async function createPipeline(req: any): Promise<any> {
 }
 
 export async function pipelineDryRun(req: { dataset_id: string; steps: any[]; sample_rows_limit?: number }): Promise<any> {
-  const res = await fetch(`${API_BASE}/pipelines/dry-run`, {
+  const res = await apiFetch(`${API_BASE}/pipelines/dry-run`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(req),
@@ -801,7 +815,7 @@ export async function pipelineDryRun(req: { dataset_id: string; steps: any[]; sa
 }
 
 export async function runPipeline(pipelineId: string): Promise<{ status: string; run: import("./types").PipelineRun }> {
-  const res = await fetch(`${API_BASE}/pipelines/${encodeURIComponent(pipelineId)}/run`, {
+  const res = await apiFetch(`${API_BASE}/pipelines/${encodeURIComponent(pipelineId)}/run`, {
     method: "POST",
   });
   if (!res.ok) {
@@ -813,19 +827,19 @@ export async function runPipeline(pipelineId: string): Promise<{ status: string;
 
 export async function fetchPipelineRuns(pipelineId?: string): Promise<{ runs: import("./types").PipelineRun[]; total: number }> {
   const url = pipelineId ? `${API_BASE}/pipelines/runs?pipeline_id=${encodeURIComponent(pipelineId)}` : `${API_BASE}/pipelines/runs`;
-  const res = await fetch(url);
+  const res = await apiFetch(url);
   if (!res.ok) throw new Error(`Failed to fetch pipeline runs (${res.status})`);
   return res.json();
 }
 
 export async function fetchDeadLetterQueue(): Promise<{ dlq: import("./types").DeadLetterItem[]; total_failed: number }> {
-  const res = await fetch(`${API_BASE}/pipelines/dlq`);
+  const res = await apiFetch(`${API_BASE}/pipelines/dlq`);
   if (!res.ok) throw new Error(`Failed to fetch DLQ (${res.status})`);
   return res.json();
 }
 
 export async function retryDeadLetterJob(dlqId: string): Promise<any> {
-  const res = await fetch(`${API_BASE}/pipelines/dlq/${encodeURIComponent(dlqId)}/retry`, {
+  const res = await apiFetch(`${API_BASE}/pipelines/dlq/${encodeURIComponent(dlqId)}/retry`, {
     method: "POST",
   });
   if (!res.ok) throw new Error(`Failed to retry DLQ job (${res.status})`);
@@ -833,20 +847,20 @@ export async function retryDeadLetterJob(dlqId: string): Promise<any> {
 }
 
 export async function fetchIntegrationsStatus(): Promise<import("./types").IntegrationStatusResponse> {
-  const res = await fetch(`${API_BASE}/integrations/status`);
+  const res = await apiFetch(`${API_BASE}/integrations/status`);
   if (!res.ok) throw new Error(`Failed to fetch integrations status (${res.status})`);
   return res.json();
 }
 
 export async function fetchIntegrationCodeTemplates(datasetName?: string, version?: string): Promise<{ dataset_name: string; version: string; templates: Record<string, string> }> {
   const url = `${API_BASE}/integrations/code-templates?dataset_name=${encodeURIComponent(datasetName || "my_dataset.csv")}&version=${encodeURIComponent(version || "main")}`;
-  const res = await fetch(url);
+  const res = await apiFetch(url);
   if (!res.ok) throw new Error(`Failed to fetch integration code templates (${res.status})`);
   return res.json();
 }
 
 export async function testWebhookAlert(service: string, message: string): Promise<any> {
-  const res = await fetch(`${API_BASE}/integrations/webhooks/test`, {
+  const res = await apiFetch(`${API_BASE}/integrations/webhooks/test`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ service, message }),
@@ -856,7 +870,7 @@ export async function testWebhookAlert(service: string, message: string): Promis
 }
 
 export async function fetchEncryptionStatus(): Promise<any> {
-  const res = await fetch(`${API_BASE}/security/encryption-status`);
+  const res = await apiFetch(`${API_BASE}/security/encryption-status`);
   if (!res.ok) throw new Error(`Failed to fetch encryption status (${res.status})`);
   return res.json();
 }
@@ -865,13 +879,13 @@ export async function fetchAuditLogs(actor?: string, action?: string): Promise<{
   const url = new URL(`${API_BASE}/security/audit-logs`);
   if (actor) url.searchParams.set("actor", actor);
   if (action) url.searchParams.set("action", action);
-  const res = await fetch(url.toString());
+  const res = await apiFetch(url.toString());
   if (!res.ok) throw new Error(`Failed to fetch audit logs (${res.status})`);
   return res.json();
 }
 
 export async function maskDatasetExport(datasetId: string, maskRules: string[]): Promise<any> {
-  const res = await fetch(`${API_BASE}/security/mask-export`, {
+  const res = await apiFetch(`${API_BASE}/security/mask-export`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ dataset_id: datasetId, mask_rules: maskRules }),
@@ -881,7 +895,7 @@ export async function maskDatasetExport(datasetId: string, maskRules: string[]):
 }
 
 export async function gdprRedactCustomer(customerId: string, datasetIds?: string[]): Promise<any> {
-  const res = await fetch(`${API_BASE}/security/gdpr-redact`, {
+  const res = await apiFetch(`${API_BASE}/security/gdpr-redact`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ customer_identifier_value: customerId, dataset_ids: datasetIds }),
@@ -891,37 +905,37 @@ export async function gdprRedactCustomer(customerId: string, datasetIds?: string
 }
 
 export async function fetchAdminOverview(): Promise<import("./types").AdminOverview> {
-  const res = await fetch(`${API_BASE}/security/admin/overview`);
+  const res = await apiFetch(`${API_BASE}/security/admin/overview`);
   if (!res.ok) throw new Error(`Failed to fetch admin overview (${res.status})`);
   return res.json();
 }
 
 export async function fetchPlatformHealth(): Promise<import("./types").PlatformHealth> {
-  const res = await fetch(`${API_BASE}/security/admin/health-metrics`);
+  const res = await apiFetch(`${API_BASE}/security/admin/health-metrics`);
   if (!res.ok) throw new Error(`Failed to fetch platform health metrics (${res.status})`);
   return res.json();
 }
 
 export async function fetchRateLimits(): Promise<any> {
-  const res = await fetch(`${API_BASE}/security/admin/rate-limits`);
+  const res = await apiFetch(`${API_BASE}/security/admin/rate-limits`);
   if (!res.ok) throw new Error(`Failed to fetch rate limits (${res.status})`);
   return res.json();
 }
 
 export async function fetchWorkerQueues(): Promise<any> {
-  const res = await fetch(`${API_BASE}/security/admin/queues`);
+  const res = await apiFetch(`${API_BASE}/security/admin/queues`);
   if (!res.ok) throw new Error(`Failed to fetch worker queues (${res.status})`);
   return res.json();
 }
 
 export async function fetchDatasetComments(datasetId: string): Promise<{ comments: import("./types").DatasetComment[] }> {
-  const res = await fetch(`${API_BASE}/workspaces/comments/${encodeURIComponent(datasetId)}`);
+  const res = await apiFetch(`${API_BASE}/workspaces/comments/${encodeURIComponent(datasetId)}`);
   if (!res.ok) throw new Error(`Failed to fetch dataset comments (${res.status})`);
   return res.json();
 }
 
 export async function addDatasetComment(datasetId: string, req: { row_index?: number; column_name?: string; comment: string }): Promise<any> {
-  const res = await fetch(`${API_BASE}/workspaces/comments/${encodeURIComponent(datasetId)}`, {
+  const res = await apiFetch(`${API_BASE}/workspaces/comments/${encodeURIComponent(datasetId)}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(req),
@@ -931,7 +945,7 @@ export async function addDatasetComment(datasetId: string, req: { row_index?: nu
 }
 
 export async function resolveDatasetComment(datasetId: string, commentId: string): Promise<any> {
-  const res = await fetch(`${API_BASE}/workspaces/comments/${encodeURIComponent(datasetId)}/${encodeURIComponent(commentId)}/resolve`, {
+  const res = await apiFetch(`${API_BASE}/workspaces/comments/${encodeURIComponent(datasetId)}/${encodeURIComponent(commentId)}/resolve`, {
     method: "POST",
   });
   if (!res.ok) throw new Error(`Failed to resolve comment (${res.status})`);
@@ -940,13 +954,13 @@ export async function resolveDatasetComment(datasetId: string, commentId: string
 
 export async function fetchReviewRequests(datasetName?: string): Promise<{ reviews: import("./types").ReviewRequest[]; total: number }> {
   const url = datasetName ? `${API_BASE}/workspaces/reviews?dataset_name=${encodeURIComponent(datasetName)}` : `${API_BASE}/workspaces/reviews`;
-  const res = await fetch(url);
+  const res = await apiFetch(url);
   if (!res.ok) throw new Error(`Failed to fetch review requests (${res.status})`);
   return res.json();
 }
 
 export async function approveReviewRequest(reviewId: string): Promise<any> {
-  const res = await fetch(`${API_BASE}/workspaces/reviews/${encodeURIComponent(reviewId)}/approve`, {
+  const res = await apiFetch(`${API_BASE}/workspaces/reviews/${encodeURIComponent(reviewId)}/approve`, {
     method: "POST",
   });
   if (!res.ok) throw new Error(`Failed to approve review (${res.status})`);

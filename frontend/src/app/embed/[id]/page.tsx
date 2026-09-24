@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { fetchShowcaseDataset } from "@/lib/api";
 import { ShowcaseDataset } from "@/lib/types";
+import { StrataMark } from "@/components/brand/StrataLogo";
 
 export default function EmbedDatasetPage() {
   const params = useParams();
@@ -202,8 +203,9 @@ export default function EmbedDatasetPage() {
         }`}
       >
         <span className="font-mono">DOI: {dataset.doi || "10.5281/strata"}</span>
-        <span className="flex items-center gap-1 font-semibold">
-          Powered by <strong className="text-[#0061FE]">Strata</strong> Data Science Studio
+        <span className="flex items-center gap-1.5 font-semibold">
+          <StrataMark size={14} />
+          <span>Powered by <strong className="text-[#0061FE]">Strata</strong> Data Science Studio</span>
         </span>
       </div>
     </div>

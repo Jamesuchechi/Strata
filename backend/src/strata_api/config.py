@@ -43,11 +43,30 @@ class Settings(BaseSettings):
     DUCKDB_MEMORY_LIMIT: str = "4GB"
     DUCKDB_THREADS: int = 4
 
-    # AI / LLM Configuration
+    # AI / LLM Configuration (Phase C)
+    # Provider keys
+    GROQ_API_KEY: str = ""
+    MISTRAL_API_KEY: str = ""
+    OPENROUTER_API_KEY: str = ""
+    LLM_PROVIDER_ORDER: str = "groq,mistral,openrouter"
+
+    # Default models per provider
+    GROQ_DEFAULT_MODEL: str = "llama-3.3-70b-versatile"
+    MISTRAL_DEFAULT_MODEL: str = "mistral-large-latest"
+    OPENROUTER_DEFAULT_MODEL: str = "mistralai/mistral-large"
+
+    # Timeouts and caps
+    LLM_TIMEOUT_SECONDS: int = 15
+    LLM_CAP_FREE: int = 25
+    LLM_CAP_PRO: int = 500
+    LLM_CAP_TEAM: int = 2000
+    LLM_CACHE_TTL_SECONDS: int = 3600
+
+    # Legacy keys (kept for future use)
     OPENAI_API_KEY: str = ""
     ANTHROPIC_API_KEY: str = ""
     GEMINI_API_KEY: str = ""
-    DEFAULT_LLM_MODEL: str = "gemini-2.5-flash"
+    DEFAULT_LLM_MODEL: str = "groq/llama-3.3-70b-versatile"
 
     # Email Delivery (Resend / SMTP / Console)
     EMAIL_PROVIDER: str = "console"  # "resend", "smtp", "console"

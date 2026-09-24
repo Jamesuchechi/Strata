@@ -72,10 +72,12 @@ async def test_pipeline_sandbox_execution():
             assert run_data["run_id"].startswith("run_")
             assert run_data["pipeline_id"] == "pipe_churn_etl"
 
-            # Verify the task was dispatched to ARQ
+            # Verify the task was dispatched to ARQ with resolved dataset_record
             mock_pool.enqueue_job.assert_called_once()
             enqueue_kwargs = mock_pool.enqueue_job.call_args[1]
             assert enqueue_kwargs["pipeline"]["id"] == "pipe_churn_etl"
+            # Worker must receive dataset_record directly (not look up _datasets_db)
+            assert "dataset_record" in enqueue_kwargs
 
             # Run history endpoint still works (polling DB for persisted records)
             hist_resp = await ac.get("/api/pipelines/runs")

@@ -2,7 +2,8 @@
 
 import React from "react";
 import Link from "next/link";
-import { Layers, ShieldCheck, Database, GitBranch, Sparkles, ArrowLeft } from "lucide-react";
+import { ShieldCheck, Database, GitBranch, Sparkles, ArrowLeft } from "lucide-react";
+import { StrataLogo } from "@/components/brand/StrataLogo";
 
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -14,12 +15,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
 
         {/* Top Header with Back to Home */}
         <div className="flex items-center justify-between w-full max-w-md mx-auto">
-          <Link href="/" className="flex items-center gap-2.5 group">
-            <div className="w-8 h-8 rounded-xl bg-[#0061FE] text-white flex items-center justify-center shadow-sm group-hover:scale-105 transition-transform duration-200">
-              <Layers className="w-4 h-4" />
-            </div>
-            <span className="text-xl font-bold font-serif text-[#1E1915] tracking-tight">Strata</span>
-          </Link>
+          <StrataLogo size="md" href="/" />
 
           <Link
             href="/"

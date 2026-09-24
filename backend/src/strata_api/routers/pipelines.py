@@ -318,6 +318,10 @@ async def run_pipeline(
 
     Returns immediately with a ``job_id``.
     Poll ``GET /api/jobs/{job_id}`` for status and the full run result.
+
+    The resolved dataset record is serialised into the job payload here, in the
+    API process, because the ARQ worker is a separate process with its own
+    empty in-memory ``_datasets_db`` — it cannot look up datasets by ID.
     """
     pipe = _pipelines_db.get(pipeline_id)
     if not pipe:
@@ -325,6 +329,17 @@ async def run_pipeline(
 
     if pipe.get("owner_id") and pipe["owner_id"] != current_user.id:
         raise HTTPException(status_code=403, detail="Forbidden: You do not have access to this pipeline.")
+
+    # Resolve target dataset NOW, in the API process, where _datasets_db is populated.
+    target_id = pipe.get("target_dataset_id")
+    dataset = _datasets_db.get(target_id) if target_id else None
+    if not dataset:
+        dataset = find_dataset_by_name_or_id(target_id) if target_id else None
+    if not dataset:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Target dataset '{target_id}' not found in catalog.",
+        )
 
     pool = get_arq_pool()
     if pool is None:
@@ -338,10 +353,12 @@ async def run_pipeline(
 
     run_id = f"run_{uuid.uuid4().hex[:8]}"
 
-    # Enqueue the heavy execution into the ARQ worker
+    # Enqueue — pass the full dataset record so the worker process doesn't need
+    # to touch the API's in-memory registry.
     job = await pool.enqueue_job(
         "run_pipeline_task",
         pipeline=pipe,
+        dataset_record=dataset,
         run_id=run_id,
     )
 

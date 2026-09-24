@@ -72,8 +72,8 @@ Replace all of the following module-level globals with real SQLAlchemy models + 
 `core/storage.py`'s S3 backend currently raises `NotImplementedError`. Implement it using `boto3` (already a dependency) against the MinIO/S3 config already present in `config.py` and `docker-compose.yml`. Local filesystem stays as a dev-only fallback, explicitly gated by `STORAGE_BACKEND=local`.
 - **Acceptance test:** with `STORAGE_BACKEND=s3` and MinIO running via docker-compose, upload/download round-trips through real S3 calls.
 
-### B3. Wire Redis + Celery for async work
-Add `celery` or any alternative queue/broker system and `redis` to `pyproject.toml`. Move AutoML training, profiling/EDA jobs, and pipeline runs off the request thread into Celery tasks, using the Redis broker already provisioned in `docker-compose.yml`. Add a `/status` polling or WebSocket endpoint for job progress instead of blocking the HTTP request.
+### B3. Wire Redis + ARQ for async work
+Add `arq` and `redis` to `pyproject.toml`. Move AutoML training, profiling/EDA jobs, and pipeline runs off the request thread into arq tasks, using the Redis broker already provisioned in `docker-compose.yml`. Add a `/status` polling or WebSocket endpoint for job progress instead of blocking the HTTP request.
 - **Acceptance test:** submitting an AutoML training job returns immediately with a job ID; a separate endpoint reports progress/completion; killing the API process doesn't kill an in-flight job.
 
 ---

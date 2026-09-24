@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { fetchSharedDataset } from "@/lib/api";
 import { PreviewData } from "@/lib/types";
+import { StrataMark } from "@/components/brand/StrataLogo";
 
 export default function SharedDatasetPreviewPage({
   params,
@@ -55,9 +56,7 @@ export default function SharedDatasetPreviewPage({
       {/* Public Read-Only Header */}
       <header className="bg-white border-b border-[#E8E4DF] px-6 py-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-xl bg-[#0061FE] flex items-center justify-center text-white font-bold text-sm shadow-2xs">
-            S
-          </div>
+          <StrataMark size={32} />
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-base font-bold text-[#1E1915]">
