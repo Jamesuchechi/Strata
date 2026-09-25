@@ -35,7 +35,6 @@ import {
   fetchDatasets,
   deleteDataset,
   searchDatasets,
-  seedDomainSamples,
   searchSemanticDatasets,
   toggleDatasetFavorite,
   fetchDatasetFavorites,
@@ -54,7 +53,6 @@ export default function DatasetsPage() {
   const [minQuality, setMinQuality] = useState<number | undefined>(undefined);
   const [sortBy, setSortBy] = useState<string>("recent");
   const [viewMode, setViewMode] = useState<"grid" | "table">("grid");
-  const [isSeeding, setIsSeeding] = useState(false);
 
   // Pillar 10.4: Semantic Vector Search toggle
   const [isSemanticMode, setIsSemanticMode] = useState(false);
@@ -185,18 +183,6 @@ export default function DatasetsPage() {
   const handleDatasetClick = (id: string) => {
     recordDatasetRecent(id).catch(() => {});
     router.push(`/datasets/${id}`);
-  };
-
-  const handleSeedSamples = async () => {
-    setIsSeeding(true);
-    try {
-      await seedDomainSamples();
-      await executeSearch();
-    } catch (err: any) {
-      alert(`Failed to load samples: ${err.message}`);
-    } finally {
-      setIsSeeding(false);
-    }
   };
 
   const displayedDatasets = activeTab === "favorites"

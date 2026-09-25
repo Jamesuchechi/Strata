@@ -287,44 +287,55 @@ export default function DashboardOverviewPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#E8E4DF]">
-                {datasets.slice(0, 4).map((ds) => (
-                  <tr key={ds.id} className="hover:bg-[#FAF8F5]/80 transition-colors">
-                    <td className="py-3 px-4">
-                      <div className="flex items-center gap-2.5">
-                        <div className="p-1.5 rounded-lg bg-[#FAF8F5] border border-[#E8E4DF]">
-                          {getFormatIcon(ds.format)}
-                        </div>
-                        <div>
-                          <div className="font-bold text-[#1E1915]">{ds.name}</div>
-                          <div className="text-[10px] text-[#8C827A] font-mono">{ds.filename}</div>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="py-3 px-3 font-mono uppercase text-[10px] text-[#736B63]">
-                      {ds.format}
-                    </td>
-                    <td className="py-3 px-3 font-mono font-semibold text-[#1E1915]">
-                      {ds.total_rows.toLocaleString()}
-                    </td>
-                    <td className="py-3 px-3">
-                      {ds.quality_score ? (
-                        <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-semibold text-[10px] border border-emerald-200">
-                          {ds.quality_score}% Clean
-                        </span>
-                      ) : (
-                        <span className="text-[#8C827A]">—</span>
-                      )}
-                    </td>
-                    <td className="py-3 px-4 text-right">
-                      <Link
-                        href={`/datasets/${ds.id}`}
-                        className="px-2.5 py-1 rounded-lg bg-[#0061FE]/10 text-[#0061FE] font-semibold text-xs hover:bg-[#0061FE] hover:text-white transition-all inline-block"
-                      >
-                        Preview
+                {datasets.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="py-8 text-center text-xs text-[#8C827A]">
+                      No datasets ingested yet.{" "}
+                      <Link href="/upload" className="text-[#0061FE] font-semibold hover:underline">
+                        Upload your first dataset
                       </Link>
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  datasets.slice(0, 4).map((ds) => (
+                    <tr key={ds.id} className="hover:bg-[#FAF8F5]/80 transition-colors">
+                      <td className="py-3 px-4">
+                        <div className="flex items-center gap-2.5">
+                          <div className="p-1.5 rounded-lg bg-[#FAF8F5] border border-[#E8E4DF]">
+                            {getFormatIcon(ds.format)}
+                          </div>
+                          <div>
+                            <div className="font-bold text-[#1E1915]">{ds.name}</div>
+                            <div className="text-[10px] text-[#8C827A] font-mono">{ds.filename}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="py-3 px-3 font-mono uppercase text-[10px] text-[#736B63]">
+                        {ds.format}
+                      </td>
+                      <td className="py-3 px-3 font-mono font-semibold text-[#1E1915]">
+                        {ds.total_rows.toLocaleString()}
+                      </td>
+                      <td className="py-3 px-3">
+                        {ds.quality_score ? (
+                          <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-semibold text-[10px] border border-emerald-200">
+                            {ds.quality_score}% Clean
+                          </span>
+                        ) : (
+                          <span className="text-[#8C827A]">—</span>
+                        )}
+                      </td>
+                      <td className="py-3 px-4 text-right">
+                        <Link
+                          href={`/datasets/${ds.id}`}
+                          className="px-2.5 py-1 rounded-lg bg-[#0061FE]/10 text-[#0061FE] font-semibold text-xs hover:bg-[#0061FE] hover:text-white transition-all inline-block"
+                        >
+                          Preview
+                        </Link>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>

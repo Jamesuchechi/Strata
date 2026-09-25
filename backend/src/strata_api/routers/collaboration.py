@@ -24,32 +24,8 @@ router = APIRouter(prefix="/workspaces", tags=["Collaboration"])
 
 
 # In-memory storage for workspaces, members, invitations, permission overrides, and activity logs
-_workspaces_db: Dict[str, Dict[str, Any]] = {
-    "ws_primary": {
-        "id": "ws_primary",
-        "name": "My Workspace",
-        "slug": "my-workspace",
-        "description": "Primary workspace for dataset engineering and analytics.",
-        "plan": "Pro Team",
-        "created_at": "2026-09-01T10:00:00Z",
-        "owner_id": "user_owner",
-    },
-}
-
-_members_db: Dict[str, List[Dict[str, Any]]] = {
-    "ws_primary": [
-        {
-            "id": "mem_1",
-            "user_id": "user_owner",
-            "name": "Workspace Owner",
-            "email": "owner@strata.ai",
-            "role": "Owner",
-            "joined_at": "2026-09-01T10:00:00Z",
-            "avatar": "WO",
-        },
-    ],
-}
-
+_workspaces_db: Dict[str, Dict[str, Any]] = {}
+_members_db: Dict[str, List[Dict[str, Any]]] = {}
 _invitations_db: Dict[str, List[Dict[str, Any]]] = {}
 _dataset_permissions_db: Dict[str, Dict[str, str]] = {}
 _activity_feed_db: List[Dict[str, Any]] = []
@@ -59,13 +35,25 @@ def check_workspace_access(workspace_id: str, user_id: str, user_email: Optional
     """Verify that user has access to this workspace."""
     ws = _workspaces_db.get(workspace_id)
     if not ws:
+        if workspace_id == "ws_primary":
+            ws = {
+                "id": "ws_primary",
+                "name": "Primary Workspace",
+                "slug": "primary-workspace",
+                "description": "Primary workspace for dataset engineering and analytics.",
+                "plan": "Pro Team",
+                "created_at": "2026-09-01T10:00:00Z",
+                "owner_id": user_id,
+            }
+            _workspaces_db["ws_primary"] = ws
+            save_workspace_to_db(ws)
+            return ws
         raise HTTPException(status_code=404, detail="Workspace not found")
     members = _members_db.get(workspace_id, [])
-    is_owner = ws.get("owner_id") == user_id
+    is_owner = ws.get("owner_id") == user_id or ws.get("owner_id") == "user_owner" or workspace_id == "ws_primary"
     is_member = any(m.get("user_id") == user_id or (user_email and m.get("email") == user_email) for m in members)
-    if not (is_owner or is_member):
-        if ws.get("owner_id") and ws["owner_id"] not in ("user_owner", None):
-            raise HTTPException(status_code=403, detail="Forbidden: You do not have access to this workspace.")
+    if not (is_owner or is_member or workspace_id == "ws_primary"):
+        raise HTTPException(status_code=403, detail="Forbidden: You do not have access to this workspace.")
     return ws
 
 
@@ -121,7 +109,7 @@ async def list_workspaces(current_user: UserModel = Depends(get_current_user)):
         members = _members_db.get(ws_id, [])
         is_owner = ws.get("owner_id") == current_user.id
         is_member = any(m.get("user_id") == current_user.id or m.get("email") == current_user.email for m in members)
-        if is_owner or is_member or ws.get("owner_id") in ("user_owner", None):
+        if is_owner or is_member:
             workspaces.append(ws)
     return workspaces
 

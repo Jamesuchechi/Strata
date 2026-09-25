@@ -182,6 +182,11 @@ export default function ShowcasePage() {
     }
   };
 
+  const totalStars = datasets.reduce((acc, d) => acc + (d.stars || 0), 0);
+  const totalRows = datasets.reduce((acc, d) => acc + (d.total_rows || 0), 0);
+  const totalDownloads = datasets.reduce((acc, d) => acc + (d.downloads || 0), 0);
+  const domainCount = new Set(datasets.map((d) => d.domain)).size;
+
   return (
     <div className="p-8 max-w-7xl mx-auto space-y-8 animate-in fade-in duration-200">
       {/* Header Banner */}
@@ -205,19 +210,27 @@ export default function ShowcasePage() {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-4 border-t border-white/10 text-xs">
             <div>
               <p className="text-white/60">Curated Benchmarks</p>
-              <p className="text-lg font-bold text-white">4 Domains</p>
+              <p className="text-lg font-bold text-white">
+                {isLoading ? "..." : `${domainCount} Domain${domainCount === 1 ? "" : "s"}`}
+              </p>
             </div>
             <div>
               <p className="text-white/60">Community Stars</p>
-              <p className="text-lg font-bold text-amber-400">1,674 ★</p>
+              <p className="text-lg font-bold text-amber-400">
+                {isLoading ? "..." : `${totalStars.toLocaleString()} ★`}
+              </p>
             </div>
             <div>
               <p className="text-white/60">Verified Records</p>
-              <p className="text-lg font-bold text-emerald-400">516,250+</p>
+              <p className="text-lg font-bold text-emerald-400">
+                {isLoading ? "..." : totalRows.toLocaleString()}
+              </p>
             </div>
             <div>
               <p className="text-white/60">Community Downloads</p>
-              <p className="text-lg font-bold text-[#60A5FA]">13,720</p>
+              <p className="text-lg font-bold text-[#60A5FA]">
+                {isLoading ? "..." : totalDownloads.toLocaleString()}
+              </p>
             </div>
           </div>
         </div>

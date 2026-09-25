@@ -29,9 +29,12 @@ import {
   BarChart2,
   Flame,
   ArrowRight,
+  Plus,
 } from "lucide-react";
 import {
   fetchPipelines,
+  createPipeline,
+  fetchPipelineTemplates,
   runPipeline,
   pipelineDryRun,
   fetchPipelineRuns,
@@ -52,6 +55,7 @@ import {
 } from "@/lib/api";
 import {
   PipelineItem,
+  PipelineTemplate,
   PipelineRun,
   DeadLetterItem,
   IntegrationStatusResponse,
@@ -66,11 +70,23 @@ export default function PipelinesAndPlatformPage() {
 
   // Pipeline State
   const [pipelines, setPipelines] = useState<PipelineItem[]>([]);
+  const [pipelineTemplates, setPipelineTemplates] = useState<PipelineTemplate[]>([]);
   const [datasets, setDatasets] = useState<DatasetItem[]>([]);
   const [runs, setRuns] = useState<PipelineRun[]>([]);
   const [dlq, setDlq] = useState<DeadLetterItem[]>([]);
   const [selectedRun, setSelectedRun] = useState<PipelineRun | null>(null);
   const [isExecuting, setIsExecuting] = useState<string | null>(null);
+
+  // Create Pipeline Modal State
+  const [showCreateModal, setShowCreateModal] = useState<boolean>(false);
+  const [newPipeName, setNewPipeName] = useState<string>("");
+  const [newPipeDesc, setNewPipeDesc] = useState<string>("");
+  const [newPipeTargetDs, setNewPipeTargetDs] = useState<string>("");
+  const [newPipeSchedule, setNewPipeSchedule] = useState<string>("0 0 * * *");
+  const [newPipeTrigger, setNewPipeTrigger] = useState<string>("cron");
+  const [newPipeStepType, setNewPipeStepType] = useState<string>("filter");
+  const [newPipeStepCond, setNewPipeStepCond] = useState<string>("amount > 0");
+  const [isCreatingPipeline, setIsCreatingPipeline] = useState<boolean>(false);
 
   // Integrations State
   const [integrations, setIntegrations] = useState<IntegrationStatusResponse | null>(null);
@@ -85,7 +101,7 @@ export default function PipelinesAndPlatformPage() {
   const [chainIntegrity, setChainIntegrity] = useState<boolean>(true);
   const [encryptionData, setEncryptionData] = useState<any>(null);
   const [maskSuccess, setMaskSuccess] = useState<any>(null);
-  const [gdprCustomerId, setGdprCustomerId] = useState<string>("CUST-1002");
+  const [gdprCustomerId, setGdprCustomerId] = useState<string>("");
   const [gdprResult, setGdprResult] = useState<any>(null);
 
   // Admin Telemetry State
@@ -104,45 +120,51 @@ export default function PipelinesAndPlatformPage() {
 
   const loadData = async () => {
     try {
-      const pData = await fetchPipelines();
+      const pData = await fetchPipelines().catch(() => ({ pipelines: [], total: 0 }));
       setPipelines(pData.pipelines || []);
 
-      const rData = await fetchPipelineRuns();
+      const tplData = await fetchPipelineTemplates().catch(() => ({ templates: [] }));
+      setPipelineTemplates(tplData.templates || []);
+
+      const rData = await fetchPipelineRuns().catch(() => ({ runs: [], total: 0 }));
       setRuns(rData.runs || []);
       if (rData.runs && rData.runs.length > 0) {
         setSelectedRun(rData.runs[0]);
       }
 
-      const dlqData = await fetchDeadLetterQueue();
+      const dlqData = await fetchDeadLetterQueue().catch(() => ({ dlq: [], total_failed: 0 }));
       setDlq(dlqData.dlq || []);
 
-      const dsList = await fetchDatasets();
+      const dsList = await fetchDatasets().catch(() => []);
       setDatasets(dsList || []);
+      if (dsList && dsList.length > 0 && !newPipeTargetDs) {
+        setNewPipeTargetDs(dsList[0].id);
+      }
       const primaryDs = dsList && dsList.length > 0 ? dsList[0].filename : "my_dataset.csv";
 
-      const intData = await fetchIntegrationsStatus();
+      const intData = await fetchIntegrationsStatus().catch(() => null);
       setIntegrations(intData);
 
-      const codes = await fetchIntegrationCodeTemplates(primaryDs, "main");
+      const codes = await fetchIntegrationCodeTemplates(primaryDs, "main").catch(() => ({ templates: {} }));
       setCodeTemplates(codes.templates || {});
 
-      const audit = await fetchAuditLogs();
+      const audit = await fetchAuditLogs().catch(() => ({ audit_logs: [], chain_integrity_verified: true, total_records: 0 }));
       setAuditLogs(audit.audit_logs || []);
       setChainIntegrity(audit.chain_integrity_verified);
 
-      const enc = await fetchEncryptionStatus();
+      const enc = await fetchEncryptionStatus().catch(() => null);
       setEncryptionData(enc);
 
-      const adm = await fetchAdminOverview();
+      const adm = await fetchAdminOverview().catch(() => null);
       setAdminOverview(adm);
 
-      const hlth = await fetchPlatformHealth();
+      const hlth = await fetchPlatformHealth().catch(() => null);
       setHealth(hlth);
 
-      const rl = await fetchRateLimits();
+      const rl = await fetchRateLimits().catch(() => null);
       setRateLimits(rl);
 
-      const q = await fetchWorkerQueues();
+      const q = await fetchWorkerQueues().catch(() => null);
       setQueueTelemetry(q);
     } catch (err) {
       console.error("Failed to load platform data:", err);
@@ -156,17 +178,79 @@ export default function PipelinesAndPlatformPage() {
   const handleRunPipeline = async (pipelineId: string) => {
     setIsExecuting(pipelineId);
     try {
-      const res = await runPipeline(pipelineId);
-      setSelectedRun(res.run);
-      setRuns((prev) => [res.run, ...prev]);
-      alert(`Pipeline execution finished in ${res.run.duration_ms}ms with 0 errors!`);
+      const res: any = await runPipeline(pipelineId);
+      if (res.run) {
+        setSelectedRun(res.run);
+        setRuns((prev) => [res.run, ...prev]);
+        alert(`Pipeline execution finished in ${res.run.duration_ms}ms with 0 errors!`);
+      } else if (res.status === "queued" && res.job_id) {
+        alert(`Pipeline job queued (ID: ${res.job_id}). Polling execution results...`);
+        // Refresh runs after a short delay
+        setTimeout(async () => {
+          const updatedRuns = await fetchPipelineRuns(pipelineId).catch(() => ({ runs: [] }));
+          if (updatedRuns.runs && updatedRuns.runs.length > 0) {
+            setRuns((prev) => [...updatedRuns.runs, ...prev]);
+            setSelectedRun(updatedRuns.runs[0]);
+          }
+        }, 1500);
+      } else {
+        alert("Pipeline executed successfully.");
+      }
     } catch (err: any) {
       alert(`Pipeline failed: ${err.message}`);
-      const updatedDlq = await fetchDeadLetterQueue();
+      const updatedDlq = await fetchDeadLetterQueue().catch(() => ({ dlq: [] }));
       setDlq(updatedDlq.dlq || []);
     } finally {
       setIsExecuting(null);
     }
+  };
+
+  const handleCreatePipeline = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newPipeName.trim() || !newPipeTargetDs) {
+      alert("Please provide a pipeline name and target dataset.");
+      return;
+    }
+    setIsCreatingPipeline(true);
+    try {
+      const steps = [
+        {
+          step_id: "step_1",
+          name: `${newPipeStepType.toUpperCase()} Step`,
+          type: newPipeStepType,
+          condition: newPipeStepType === "filter" ? newPipeStepCond : undefined,
+          columns: newPipeStepType === "quantile_clip" ? ["value", "amount"] : undefined,
+          expr: newPipeStepType === "expression" ? "amount * 1.0" : undefined,
+        },
+      ];
+      const payload = {
+        name: newPipeName.trim(),
+        description: newPipeDesc.trim(),
+        target_dataset_id: newPipeTargetDs,
+        schedule: newPipeSchedule,
+        trigger: newPipeTrigger,
+        timeout_seconds: 60,
+        max_memory_mb: 512,
+        steps,
+      };
+      await createPipeline(payload);
+      setShowCreateModal(false);
+      setNewPipeName("");
+      setNewPipeDesc("");
+      await loadData();
+      alert("Pipeline registered successfully!");
+    } catch (err: any) {
+      alert(`Failed to create pipeline: ${err.message}`);
+    } finally {
+      setIsCreatingPipeline(false);
+    }
+  };
+
+  const handleApplyTemplate = (tpl: PipelineTemplate) => {
+    setNewPipeName(tpl.name);
+    setNewPipeDesc(tpl.description);
+    setNewPipeSchedule(tpl.schedule || "0 2 * * *");
+    setShowCreateModal(true);
   };
 
   const handleRetryDlq = async (dlqId: string) => {
@@ -246,15 +330,21 @@ export default function PipelinesAndPlatformPage() {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-4 border-t border-white/10 text-xs font-mono">
             <div>
               <p className="text-white/60">Platform Status</p>
-              <p className="text-lg font-bold text-emerald-400">99.98% Live</p>
+              <p className="text-lg font-bold text-emerald-400">
+                {health?.api_availability_pct ? `${health.api_availability_pct}% Live` : (health?.duckdb_latency_p95_ms ? `${health.duckdb_latency_p95_ms}ms p95` : "Healthy / Ready")}
+              </p>
             </div>
             <div>
               <p className="text-white/60">Worker Queues</p>
-              <p className="text-lg font-bold text-[#60A5FA]">4 Active</p>
+              <p className="text-lg font-bold text-[#60A5FA]">
+                {queueTelemetry?.active_workers ? `${queueTelemetry.active_workers} Active` : (queueTelemetry?.queues ? `${queueTelemetry.queues.length} Active` : "1 Active")}
+              </p>
             </div>
             <div>
               <p className="text-white/60">Audit Trail</p>
-              <p className="text-lg font-bold text-purple-300">SHA256 Chained</p>
+              <p className="text-lg font-bold text-purple-300">
+                {chainIntegrity ? "SHA256 Chained" : "Tamper Checked"}
+              </p>
             </div>
             <div>
               <p className="text-white/60">Dead-Letter DLQ</p>
@@ -323,44 +413,99 @@ export default function PipelinesAndPlatformPage() {
             <div className="lg:col-span-1 space-y-4">
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-bold text-[#1E1915]">Registered Pipelines</h3>
-                <span className="text-xs font-mono text-[#8C827A]">{pipelines.length} Active</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-mono text-[#8C827A]">{pipelines.length} Active</span>
+                  <button
+                    onClick={() => setShowCreateModal(true)}
+                    className="px-2.5 py-1 bg-[#0061FE] hover:bg-[#0052D4] text-white text-xs font-semibold rounded-lg flex items-center gap-1 shadow-sm transition-colors cursor-pointer"
+                  >
+                    <Plus className="w-3 h-3" />
+                    <span>New Pipeline</span>
+                  </button>
+                </div>
               </div>
 
-              {pipelines.map((p) => (
-                <div
-                  key={p.id}
-                  className="bg-white border border-[#E8E4DF] hover:border-[#0061FE] rounded-xl p-4 shadow-sm space-y-3 transition-all"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-purple-50 text-purple-700 border border-purple-200 uppercase font-semibold">
-                      {p.trigger} ({p.schedule})
-                    </span>
-                    <span className="text-[10px] font-mono text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                      {p.last_status}
-                    </span>
-                  </div>
+              {pipelines.length === 0 ? (
+                <div className="bg-white border border-[#E8E4DF] rounded-xl p-6 text-center space-y-3">
+                  <Cpu className="w-8 h-8 text-[#8C827A] mx-auto opacity-50" />
+                  <h4 className="text-sm font-bold text-[#1E1915]">No ETL Pipelines Configured</h4>
+                  <p className="text-xs text-[#8C827A] max-w-xs mx-auto">
+                    Automate Polars transformations, outlier clipping, and feature engineering across your datasets.
+                  </p>
+                  <button
+                    onClick={() => setShowCreateModal(true)}
+                    className="px-3.5 py-1.5 bg-[#0061FE] hover:bg-[#0052D4] text-white text-xs font-semibold rounded-xl inline-flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Create Pipeline</span>
+                  </button>
+                </div>
+              ) : (
+                pipelines.map((p) => (
+                  <div
+                    key={p.id}
+                    className="bg-white border border-[#E8E4DF] hover:border-[#0061FE] rounded-xl p-4 shadow-sm space-y-3 transition-all"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-purple-50 text-purple-700 border border-purple-200 uppercase font-semibold">
+                        {p.trigger} ({p.schedule})
+                      </span>
+                      <span className="text-[10px] font-mono text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                        {p.last_status}
+                      </span>
+                    </div>
 
-                  <div>
-                    <h4 className="text-sm font-bold text-[#1E1915]">{p.name}</h4>
-                    <p className="text-xs text-[#6F675F] line-clamp-2 mt-0.5">{p.description}</p>
-                  </div>
+                    <div>
+                      <h4 className="text-sm font-bold text-[#1E1915]">{p.name}</h4>
+                      <p className="text-xs text-[#6F675F] line-clamp-2 mt-0.5">{p.description}</p>
+                    </div>
 
-                  <div className="pt-2 border-t border-[#E8E4DF] flex items-center justify-between text-xs text-[#8C827A] font-mono text-[11px]">
-                    <span>{p.max_memory_mb}MB RAM</span>
-                    <span>•</span>
-                    <span>{p.steps.length} Steps</span>
-                    <span>•</span>
-                    <button
-                      onClick={() => handleRunPipeline(p.id)}
-                      disabled={isExecuting === p.id}
-                      className="px-2.5 py-1 bg-[#0061FE] hover:bg-[#0052D4] text-white text-xs font-semibold rounded-lg flex items-center gap-1 shadow-sm transition-colors disabled:opacity-50"
-                    >
-                      <Play className="w-3 h-3" />
-                      <span>{isExecuting === p.id ? "Running..." : "Run Sandbox"}</span>
-                    </button>
+                    <div className="pt-2 border-t border-[#E8E4DF] flex items-center justify-between text-xs text-[#8C827A] font-mono text-[11px]">
+                      <span>{p.max_memory_mb}MB RAM</span>
+                      <span>•</span>
+                      <span>{p.steps.length} Steps</span>
+                      <span>•</span>
+                      <button
+                        onClick={() => handleRunPipeline(p.id)}
+                        disabled={isExecuting === p.id}
+                        className="px-2.5 py-1 bg-[#0061FE] hover:bg-[#0052D4] text-white text-xs font-semibold rounded-lg flex items-center gap-1 shadow-sm transition-colors disabled:opacity-50 cursor-pointer"
+                      >
+                        <Play className="w-3 h-3" />
+                        <span>{isExecuting === p.id ? "Running..." : "Run Sandbox"}</span>
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+
+              {/* Reusable Templates Helper */}
+              {pipelineTemplates.length > 0 && (
+                <div className="p-4 bg-white border border-[#E8E4DF] rounded-xl space-y-3">
+                  <div className="flex items-center justify-between text-xs font-bold text-[#1E1915]">
+                    <div className="flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-[#0061FE]" />
+                      <span>Reusable Templates (7.8)</span>
+                    </div>
+                    <span className="text-[10px] font-mono text-[#8C827A]">{pipelineTemplates.length} Available</span>
+                  </div>
+                  <div className="space-y-2">
+                    {pipelineTemplates.map((tpl) => (
+                      <div key={tpl.id} className="p-2.5 bg-[#FAF8F5] rounded-lg border border-[#E8E4DF] text-xs space-y-1">
+                        <div className="flex items-center justify-between font-semibold text-[#1E1915]">
+                          <span>{tpl.name}</span>
+                          <button
+                            onClick={() => handleApplyTemplate(tpl)}
+                            className="text-[10px] text-[#0061FE] hover:underline font-bold"
+                          >
+                            Use Template →
+                          </button>
+                        </div>
+                        <p className="text-[11px] text-[#6F675F] line-clamp-2">{tpl.description}</p>
+                      </div>
+                    ))}
                   </div>
                 </div>
-              ))}
+              )}
 
               {/* Dead-Letter Queue (DLQ) Card */}
               {dlq.length > 0 && (
@@ -749,22 +894,161 @@ export default function PipelinesAndPlatformPage() {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="p-4 bg-[#FAF8F5] border border-[#E8E4DF] rounded-xl space-y-1">
                 <h4 className="text-xs font-bold text-[#1E1915]">Community Free</h4>
-                <p className="text-sm font-mono text-[#0061FE] font-bold">60 req/min</p>
-                <p className="text-[11px] text-[#8C827A]">Burst allowance: 15 req • 2 concurrent</p>
+                <p className="text-sm font-mono text-[#0061FE] font-bold">
+                  {rateLimits?.tiers?.community_free?.rate_limit_per_minute || 60} req/min
+                </p>
+                <p className="text-[11px] text-[#8C827A]">
+                  Burst allowance: {rateLimits?.tiers?.community_free?.burst_allowance || 15} req • {rateLimits?.tiers?.community_free?.concurrent_queries || 2} concurrent
+                </p>
               </div>
 
               <div className="p-4 bg-blue-50 border border-blue-200 rounded-xl space-y-1">
                 <h4 className="text-xs font-bold text-blue-900">Pro Researcher</h4>
-                <p className="text-sm font-mono text-[#0061FE] font-bold">300 req/min</p>
-                <p className="text-[11px] text-blue-700">Burst allowance: 60 req • 8 concurrent</p>
+                <p className="text-sm font-mono text-[#0061FE] font-bold">
+                  {rateLimits?.tiers?.pro_researcher?.rate_limit_per_minute || 300} req/min
+                </p>
+                <p className="text-[11px] text-blue-700">
+                  Burst allowance: {rateLimits?.tiers?.pro_researcher?.burst_allowance || 60} req • {rateLimits?.tiers?.pro_researcher?.concurrent_queries || 8} concurrent
+                </p>
               </div>
 
               <div className="p-4 bg-purple-50 border border-purple-200 rounded-xl space-y-1">
                 <h4 className="text-xs font-bold text-purple-900">Team Enterprise</h4>
-                <p className="text-sm font-mono text-purple-700 font-bold">1,200 req/min</p>
-                <p className="text-[11px] text-purple-700">Burst allowance: 250 req • 32 concurrent</p>
+                <p className="text-sm font-mono text-purple-700 font-bold">
+                  {rateLimits?.tiers?.team_enterprise?.rate_limit_per_minute || 1200} req/min
+                </p>
+                <p className="text-[11px] text-purple-700">
+                  Burst allowance: {rateLimits?.tiers?.team_enterprise?.burst_allowance || 250} req • {rateLimits?.tiers?.team_enterprise?.concurrent_queries || 32} concurrent
+                </p>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Create Pipeline Modal */}
+      {showCreateModal && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl border border-[#E8E4DF] shadow-2xl max-w-lg w-full p-6 space-y-4 animate-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between border-b border-[#E8E4DF] pb-3">
+              <h3 className="text-sm font-bold text-[#1E1915] flex items-center gap-2">
+                <Cpu className="w-4 h-4 text-[#0061FE]" />
+                <span>Create Compute Sandbox Pipeline</span>
+              </h3>
+              <button
+                onClick={() => setShowCreateModal(false)}
+                className="text-[#8C827A] hover:text-[#1E1915] cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleCreatePipeline} className="space-y-3.5">
+              <div>
+                <label className="text-[11px] font-semibold text-[#5C554D] block mb-1">
+                  Pipeline Name
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Daily Data Quality & Outlier Clipping"
+                  value={newPipeName}
+                  onChange={(e) => setNewPipeName(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-[#E8E4DF] text-xs text-[#1E1915] outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="text-[11px] font-semibold text-[#5C554D] block mb-1">
+                  Description
+                </label>
+                <textarea
+                  value={newPipeDesc}
+                  onChange={(e) => setNewPipeDesc(e.target.value)}
+                  placeholder="Transformation rationale, schedules, and feature definitions..."
+                  className="w-full px-3 py-2 rounded-xl border border-[#E8E4DF] text-xs text-[#1E1915] outline-none h-16 resize-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[11px] font-semibold text-[#5C554D] block mb-1">
+                    Target Dataset
+                  </label>
+                  <select
+                    value={newPipeTargetDs}
+                    onChange={(e) => setNewPipeTargetDs(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-[#E8E4DF] bg-[#FAF8F5] text-xs text-[#1E1915] outline-none cursor-pointer"
+                  >
+                    {datasets.map((d) => (
+                      <option key={d.id} value={d.id}>
+                        {d.filename} ({d.total_rows.toLocaleString()} rows)
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-semibold text-[#5C554D] block mb-1">
+                    Schedule (Cron Expression)
+                  </label>
+                  <input
+                    type="text"
+                    value={newPipeSchedule}
+                    onChange={(e) => setNewPipeSchedule(e.target.value)}
+                    placeholder="0 0 * * *"
+                    className="w-full px-3 py-2 rounded-xl border border-[#E8E4DF] text-xs font-mono text-[#1E1915] outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[11px] font-semibold text-[#5C554D] block mb-1">
+                    Step Operation Type
+                  </label>
+                  <select
+                    value={newPipeStepType}
+                    onChange={(e) => setNewPipeStepType(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-[#E8E4DF] bg-[#FAF8F5] text-xs text-[#1E1915] outline-none cursor-pointer"
+                  >
+                    <option value="filter">Filter Condition</option>
+                    <option value="quantile_clip">Quantile Outlier Clip (p99)</option>
+                    <option value="expression">Derived Expression Feature</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-semibold text-[#5C554D] block mb-1">
+                    Condition / Param
+                  </label>
+                  <input
+                    type="text"
+                    value={newPipeStepCond}
+                    onChange={(e) => setNewPipeStepCond(e.target.value)}
+                    placeholder="e.g. amount > 0"
+                    className="w-full px-3 py-2 rounded-xl border border-[#E8E4DF] text-xs font-mono text-[#1E1915] outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-[#E8E4DF]">
+                <button
+                  type="button"
+                  onClick={() => setShowCreateModal(false)}
+                  className="px-4 py-2 rounded-xl border border-[#E8E4DF] hover:bg-[#FAF8F5] text-xs font-semibold text-[#736B63] cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isCreatingPipeline || !newPipeName.trim() || !newPipeTargetDs}
+                  className="px-4 py-2 rounded-xl bg-[#0061FE] hover:bg-[#0052D4] text-white text-xs font-semibold shadow-sm disabled:opacity-50 transition-all cursor-pointer"
+                >
+                  {isCreatingPipeline ? "Registering..." : "Create Pipeline"}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

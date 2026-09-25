@@ -9,7 +9,7 @@ import json
 import traceback
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Any
-from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks, status
 from pydantic import BaseModel, Field
 
 from strata_api.models.user import UserModel
@@ -341,17 +341,13 @@ async def run_pipeline(
             detail=f"Target dataset '{target_id}' not found in catalog.",
         )
 
+    run_id = f"run_{uuid.uuid4().hex[:8]}"
     pool = get_arq_pool()
     if pool is None:
         raise HTTPException(
-            status_code=503,
-            detail=(
-                "Background job queue unavailable: Redis is not connected. "
-                "Start Redis (docker-compose up redis) and restart the API."
-            ),
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Redis / job queue is unavailable. Cannot enqueue pipeline run.",
         )
-
-    run_id = f"run_{uuid.uuid4().hex[:8]}"
 
     # Enqueue — pass the full dataset record so the worker process doesn't need
     # to touch the API's in-memory registry.

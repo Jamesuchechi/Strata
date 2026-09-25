@@ -25,11 +25,11 @@ _billing_state = {
     "storage_limit_bytes": 5 * 1024 * 1024 * 1024,  # 5 GB
     "dataset_limit": 10,
     "ai_queries_limit": 1000,
-    "ai_queries_used": 142,
+    "ai_queries_used": 0,
     "compute_hours_limit": 20,
-    "compute_hours_used": 3.8,
+    "compute_hours_used": 0.0,
     "auto_ml_models_limit": 10,
-    "auto_ml_models_used": 4,
+    "auto_ml_models_used": 0,
     "next_billing_date": "2026-10-01",
 }
 
@@ -41,11 +41,23 @@ async def get_usage_and_plan(current_user: UserModel = Depends(get_current_user)
     total_bytes = sum(d.get("size_bytes", 0) for d in user_datasets)
     dataset_count = len(user_datasets)
 
+    from strata_api.routers.lineage import _models_db
+    user_models = [m for m in _models_db if not m.get("owner_id") or m.get("owner_id") == current_user.id]
+    models_used = len(user_models)
+
+    from strata_api.routers.pipelines import _pipeline_runs
+    user_runs = [r for r in _pipeline_runs.values()]
+    total_duration_ms = sum(r.get("duration_ms", 0) for r in user_runs)
+    compute_hours = round(total_duration_ms / (1000 * 3600), 2)
+
     storage_pct = round((total_bytes / _billing_state["storage_limit_bytes"]) * 100, 2)
     dataset_pct = round((dataset_count / _billing_state["dataset_limit"]) * 100, 2)
 
     return {
         **_billing_state,
+        "ai_queries_used": _billing_state.get("ai_queries_used", 0),
+        "auto_ml_models_used": models_used,
+        "compute_hours_used": compute_hours,
         "storage_used_bytes": total_bytes,
         "storage_used_mb": round(total_bytes / (1024 * 1024), 2),
         "storage_limit_mb": round(_billing_state["storage_limit_bytes"] / (1024 * 1024), 2),

@@ -41,7 +41,7 @@ import {
 
 export default function WorkspacePage() {
   const [workspaces, setWorkspaces] = useState<WorkspaceItem[]>([]);
-  const [activeWorkspaceId, setActiveWorkspaceId] = useState<string>("ws_primary");
+  const [activeWorkspaceId, setActiveWorkspaceId] = useState<string>("");
   const [members, setMembers] = useState<WorkspaceMember[]>([]);
   const [invites, setInvites] = useState<WorkspaceInvite[]>([]);
   const [activity, setActivity] = useState<ActivityFeedItem[]>([]);
@@ -61,22 +61,40 @@ export default function WorkspacePage() {
   const [newWsName, setNewWsName] = useState("");
   const [newWsDesc, setNewWsDesc] = useState("");
 
-  const loadData = async (wsId: string) => {
+  const loadData = async (preferredWsId?: string) => {
     setIsLoading(true);
     try {
-      const [wsList, memData, actFeed, dsList, permData] = await Promise.all([
-        fetchWorkspaces(),
-        fetchWorkspaceMembers(wsId),
-        fetchWorkspaceActivity(wsId),
-        fetchDatasets(),
-        fetchWorkspacePermissions(wsId),
-      ]);
+      const wsList = await fetchWorkspaces();
       setWorkspaces(wsList);
-      setMembers(memData.members || []);
-      setInvites(memData.pending_invites || []);
-      setActivity(actFeed || []);
+
+      const targetWsId =
+        preferredWsId && wsList.some((w) => w.id === preferredWsId)
+          ? preferredWsId
+          : wsList.length > 0
+          ? wsList[0].id
+          : "";
+
+      setActiveWorkspaceId(targetWsId);
+
+      const dsList = await fetchDatasets().catch(() => []);
       setDatasets(dsList || []);
-      setPermissions(permData || {});
+
+      if (targetWsId) {
+        const [memData, actFeed, permData] = await Promise.all([
+          fetchWorkspaceMembers(targetWsId).catch(() => ({ members: [], pending_invites: [] })),
+          fetchWorkspaceActivity(targetWsId).catch(() => []),
+          fetchWorkspacePermissions(targetWsId).catch(() => ({})),
+        ]);
+        setMembers(memData.members || []);
+        setInvites(memData.pending_invites || []);
+        setActivity(actFeed || []);
+        setPermissions(permData || {});
+      } else {
+        setMembers([]);
+        setInvites([]);
+        setActivity([]);
+        setPermissions({});
+      }
     } catch (err) {
       console.error("Failed to load workspace data:", err);
     } finally {
@@ -85,10 +103,27 @@ export default function WorkspacePage() {
   };
 
   useEffect(() => {
-    loadData(activeWorkspaceId);
-  }, [activeWorkspaceId]);
+    loadData();
+  }, []);
 
-  const activeWs = workspaces.find((w) => w.id === activeWorkspaceId) || workspaces[0];
+  const handleWorkspaceChange = async (wsId: string) => {
+    setActiveWorkspaceId(wsId);
+    try {
+      const [memData, actFeed, permData] = await Promise.all([
+        fetchWorkspaceMembers(wsId).catch(() => ({ members: [], pending_invites: [] })),
+        fetchWorkspaceActivity(wsId).catch(() => []),
+        fetchWorkspacePermissions(wsId).catch(() => ({})),
+      ]);
+      setMembers(memData.members || []);
+      setInvites(memData.pending_invites || []);
+      setActivity(actFeed || []);
+      setPermissions(permData || {});
+    } catch (err) {
+      console.error("Failed to switch workspace:", err);
+    }
+  };
+
+  const activeWs = workspaces.find((w) => w.id === activeWorkspaceId);
 
   const handleSendInvite = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -177,10 +212,10 @@ export default function WorkspacePage() {
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-base sm:text-lg font-bold text-[#1E1915]">
-                {activeWs?.name || "Team Workspace"}
+                {activeWs ? activeWs.name : "Team Workspaces"}
               </h1>
               <span className="px-2 py-0.5 rounded-full bg-blue-50 border border-blue-200 text-blue-700 text-[10px] font-bold">
-                {activeWs?.plan || "Pro Team"}
+                {activeWs ? (activeWs.plan || "Free") : "No Active Workspace"}
               </span>
             </div>
             <p className="text-xs text-[#8C827A]">
@@ -191,17 +226,19 @@ export default function WorkspacePage() {
 
         {/* Workspace Switcher & Invite CTA */}
         <div className="flex items-center gap-2">
-          <select
-            value={activeWorkspaceId}
-            onChange={(e) => setActiveWorkspaceId(e.target.value)}
-            className="px-3 py-1.5 rounded-xl border border-[#E8E4DF] bg-[#FAF8F5] text-xs font-semibold text-[#1E1915] outline-none cursor-pointer"
-          >
-            {workspaces.map((w) => (
-              <option key={w.id} value={w.id}>
-                {w.name}
-              </option>
-            ))}
-          </select>
+          {workspaces.length > 0 && (
+            <select
+              value={activeWorkspaceId}
+              onChange={(e) => handleWorkspaceChange(e.target.value)}
+              className="px-3 py-1.5 rounded-xl border border-[#E8E4DF] bg-[#FAF8F5] text-xs font-semibold text-[#1E1915] outline-none cursor-pointer"
+            >
+              {workspaces.map((w) => (
+                <option key={w.id} value={w.id}>
+                  {w.name}
+                </option>
+              ))}
+            </select>
+          )}
 
           <button
             onClick={() => setShowCreateWsModal(true)}
@@ -213,7 +250,8 @@ export default function WorkspacePage() {
 
           <button
             onClick={() => setShowInviteModal(true)}
-            className="px-3.5 py-1.5 rounded-xl bg-[#0061FE] hover:bg-[#0052D4] text-white text-xs font-semibold flex items-center gap-1.5 shadow-sm shadow-[#0061FE]/20 cursor-pointer"
+            disabled={!activeWs}
+            className="px-3.5 py-1.5 rounded-xl bg-[#0061FE] hover:bg-[#0052D4] text-white text-xs font-semibold flex items-center gap-1.5 shadow-sm shadow-[#0061FE]/20 cursor-pointer disabled:opacity-50"
           >
             <UserPlus className="w-3.5 h-3.5" />
             <span>Invite Member</span>
@@ -254,13 +292,37 @@ export default function WorkspacePage() {
           }`}
         >
           <Activity className="w-4 h-4" />
-          <span>Live Activity Audit Feed (9.5)</span>
+          <span>Live Activity Audit Feed ({activity.length})</span>
         </button>
       </div>
 
       {/* Main Content Area */}
       <div className="flex-1 overflow-y-auto p-6 max-w-6xl w-full mx-auto space-y-6">
-        {activeTab === "members" && (
+        {isLoading ? (
+          <div className="py-20 text-center space-y-3">
+            <div className="w-8 h-8 border-2 border-[#0061FE] border-t-transparent rounded-full animate-spin mx-auto" />
+            <p className="text-xs text-[#8C827A] font-medium">Loading workspace data...</p>
+          </div>
+        ) : workspaces.length === 0 ? (
+          <div className="p-12 text-center bg-white rounded-2xl border border-[#E8E4DF] space-y-4 max-w-xl mx-auto my-12 shadow-2xs">
+            <div className="w-12 h-12 rounded-2xl bg-[#0061FE]/10 text-[#0061FE] flex items-center justify-center mx-auto">
+              <Building2 className="w-6 h-6" />
+            </div>
+            <div className="space-y-1">
+              <h3 className="text-base font-bold text-[#1E1915]">No Workspaces Found</h3>
+              <p className="text-xs text-[#8C827A] max-w-sm mx-auto">
+                Workspaces allow you to collaborate with team members, assign granular roles, and enforce per-dataset permissions.
+              </p>
+            </div>
+            <button
+              onClick={() => setShowCreateWsModal(true)}
+              className="px-4 py-2 rounded-xl bg-[#0061FE] hover:bg-[#0052D4] text-white text-xs font-semibold shadow-sm transition-all inline-flex items-center gap-2 cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Create Your First Workspace</span>
+            </button>
+          </div>
+        ) : activeTab === "members" ? (
           <div className="space-y-6">
             {/* Active Members Table */}
             <div className="p-5 rounded-2xl bg-white border border-[#E8E4DF] shadow-2xs space-y-4">
@@ -274,67 +336,73 @@ export default function WorkspacePage() {
                 </span>
               </div>
 
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead>
-                    <tr className="border-b border-[#E8E4DF] text-[#8C827A] font-semibold">
-                      <th className="py-2.5 px-3">Member</th>
-                      <th className="py-2.5 px-3">Role</th>
-                      <th className="py-2.5 px-3">Joined</th>
-                      <th className="py-2.5 px-3 text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {members.map((m) => (
-                      <tr key={m.id} className="border-b border-[#E8E4DF]/50 hover:bg-[#FAF8F5]">
-                        <td className="py-3 px-3">
-                          <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-full bg-[#0061FE]/10 text-[#0061FE] font-bold flex items-center justify-center text-xs">
-                              {m.avatar}
-                            </div>
-                            <div>
-                              <div className="font-semibold text-[#1E1915]">{m.name}</div>
-                              <div className="text-[11px] text-[#8C827A] font-mono">{m.email}</div>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="py-3 px-3">
-                          {m.role === "Owner" ? (
-                            <span className="px-2.5 py-1 rounded-lg border text-[11px] font-bold bg-amber-50 text-amber-800 border-amber-300">
-                              Owner
-                            </span>
-                          ) : (
-                            <select
-                              value={m.role}
-                              onChange={(e) => handleUpdateRole(m.id, e.target.value)}
-                              className={`px-2.5 py-1 rounded-lg border text-[11px] font-bold outline-none cursor-pointer ${getRoleBadgeColor(m.role)}`}
-                            >
-                              <option value="Admin">Admin</option>
-                              <option value="Editor">Editor</option>
-                              <option value="Analyst">Analyst</option>
-                              <option value="Viewer">Viewer</option>
-                            </select>
-                          )}
-                        </td>
-                        <td className="py-3 px-3 text-[#736B63] font-mono">
-                          {new Date(m.joined_at).toLocaleDateString()}
-                        </td>
-                        <td className="py-3 px-3 text-right">
-                          {m.role !== "Owner" && (
-                            <button
-                              onClick={() => handleRemoveMember(m.id)}
-                              className="text-stone-400 hover:text-rose-600 p-1.5 rounded cursor-pointer transition-colors"
-                              title="Revoke access"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          )}
-                        </td>
+              {members.length === 0 ? (
+                <div className="p-8 text-center text-xs text-[#8C827A] bg-[#FAF8F5] rounded-xl border border-[#E8E4DF]">
+                  No members registered in this workspace yet. Click &apos;Invite Member&apos; to add collaborators.
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead>
+                      <tr className="border-b border-[#E8E4DF] text-[#8C827A] font-semibold">
+                        <th className="py-2.5 px-3">Member</th>
+                        <th className="py-2.5 px-3">Role</th>
+                        <th className="py-2.5 px-3">Joined</th>
+                        <th className="py-2.5 px-3 text-right">Actions</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {members.map((m) => (
+                        <tr key={m.id} className="border-b border-[#E8E4DF]/50 hover:bg-[#FAF8F5]">
+                          <td className="py-3 px-3">
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 rounded-full bg-[#0061FE]/10 text-[#0061FE] font-bold flex items-center justify-center text-xs">
+                                {m.avatar || "US"}
+                              </div>
+                              <div>
+                                <div className="font-semibold text-[#1E1915]">{m.name}</div>
+                                <div className="text-[11px] text-[#8C827A] font-mono">{m.email}</div>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="py-3 px-3">
+                            {m.role === "Owner" ? (
+                              <span className="px-2.5 py-1 rounded-lg border text-[11px] font-bold bg-amber-50 text-amber-800 border-amber-300">
+                                Owner
+                              </span>
+                            ) : (
+                              <select
+                                value={m.role}
+                                onChange={(e) => handleUpdateRole(m.id, e.target.value)}
+                                className={`px-2.5 py-1 rounded-lg border text-[11px] font-bold outline-none cursor-pointer ${getRoleBadgeColor(m.role)}`}
+                              >
+                                <option value="Admin">Admin</option>
+                                <option value="Editor">Editor</option>
+                                <option value="Analyst">Analyst</option>
+                                <option value="Viewer">Viewer</option>
+                              </select>
+                            )}
+                          </td>
+                          <td className="py-3 px-3 text-[#736B63] font-mono">
+                            {new Date(m.joined_at).toLocaleDateString()}
+                          </td>
+                          <td className="py-3 px-3 text-right">
+                            {m.role !== "Owner" && (
+                              <button
+                                onClick={() => handleRemoveMember(m.id)}
+                                className="text-stone-400 hover:text-rose-600 p-1.5 rounded cursor-pointer transition-colors"
+                                title="Revoke access"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
 
             {/* Pending Invitations */}
@@ -363,9 +431,7 @@ export default function WorkspacePage() {
               </div>
             )}
           </div>
-        )}
-
-        {activeTab === "permissions" && (
+        ) : activeTab === "permissions" ? (
           <div className="p-5 rounded-2xl bg-white border border-[#E8E4DF] shadow-2xs space-y-4">
             <div className="border-b border-[#E8E4DF] pb-3">
               <h3 className="text-sm font-bold text-[#1E1915] flex items-center gap-2">
@@ -377,42 +443,46 @@ export default function WorkspacePage() {
               </p>
             </div>
 
-            <div className="space-y-3">
-              {datasets.map((d) => {
-                const currentMinRole = permissions[d.id] || "Editor";
-                return (
-                  <div
-                    key={d.id}
-                    className="p-4 rounded-xl bg-[#FAF8F5] border border-[#E8E4DF] flex flex-col sm:flex-row sm:items-center justify-between gap-3"
-                  >
-                    <div>
-                      <div className="font-bold text-xs text-[#1E1915]">{d.filename}</div>
-                      <div className="text-[11px] text-[#8C827A]">
-                        {d.total_rows.toLocaleString()} rows · {d.format.toUpperCase()} · Quality: {d.quality_score || 90}%
+            {datasets.length === 0 ? (
+              <div className="p-8 text-center text-xs text-[#8C827A] bg-[#FAF8F5] rounded-xl border border-[#E8E4DF]">
+                No datasets registered in this workspace yet. Upload datasets to configure minimum edit role permissions.
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {datasets.map((d) => {
+                  const currentMinRole = permissions[d.id] || "Editor";
+                  return (
+                    <div
+                      key={d.id}
+                      className="p-4 rounded-xl bg-[#FAF8F5] border border-[#E8E4DF] flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                    >
+                      <div>
+                        <div className="font-bold text-xs text-[#1E1915]">{d.filename}</div>
+                        <div className="text-[11px] text-[#8C827A]">
+                          {d.total_rows.toLocaleString()} rows · {d.format.toUpperCase()} · Quality: {d.quality_score || 90}%
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-semibold text-[#5C554D]">Minimum Edit Role:</span>
+                        <select
+                          value={currentMinRole}
+                          onChange={(e) => handleUpdatePermission(d.id, e.target.value)}
+                          className="px-3 py-1.5 rounded-lg bg-white border border-[#E8E4DF] text-xs font-semibold text-[#1E1915] outline-none cursor-pointer"
+                        >
+                          <option value="Viewer">Viewer (Open to All)</option>
+                          <option value="Analyst">Analyst</option>
+                          <option value="Editor">Editor (Recommended)</option>
+                          <option value="Admin">Admin Only</option>
+                        </select>
                       </div>
                     </div>
-
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-semibold text-[#5C554D]">Minimum Edit Role:</span>
-                      <select
-                        value={currentMinRole}
-                        onChange={(e) => handleUpdatePermission(d.id, e.target.value)}
-                        className="px-3 py-1.5 rounded-lg bg-white border border-[#E8E4DF] text-xs font-semibold text-[#1E1915] outline-none cursor-pointer"
-                      >
-                        <option value="Viewer">Viewer (Open to All)</option>
-                        <option value="Analyst">Analyst</option>
-                        <option value="Editor">Editor (Recommended)</option>
-                        <option value="Admin">Admin Only</option>
-                      </select>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
-        )}
-
-        {activeTab === "activity" && (
+        ) : (
           <div className="p-5 rounded-2xl bg-white border border-[#E8E4DF] shadow-2xs space-y-4">
             <div className="border-b border-[#E8E4DF] pb-3">
               <h3 className="text-sm font-bold text-[#1E1915] flex items-center gap-2">
@@ -424,29 +494,35 @@ export default function WorkspacePage() {
               </p>
             </div>
 
-            <div className="space-y-3">
-              {activity.map((act) => (
-                <div
-                  key={act.id}
-                  className="p-3.5 rounded-xl bg-[#FAF8F5] border border-[#E8E4DF] flex items-start gap-3 text-xs"
-                >
-                  <div className="w-2.5 h-2.5 rounded-full bg-[#0061FE] mt-1.5 shrink-0" />
-                  <div className="flex-1 space-y-0.5">
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold text-[#1E1915]">{act.actor_name}</span>
-                      <span className="text-[10px] text-[#8C827A] font-mono">{act.timestamp}</span>
-                    </div>
-                    <p className="text-[#5C554D] leading-snug">{act.details}</p>
-                    <div className="flex items-center gap-2 pt-1 font-mono text-[10px] text-[#8C827A]">
-                      <span className="px-1.5 py-0.5 rounded bg-white border border-[#E8E4DF]">
-                        {act.action}
-                      </span>
-                      <span>Target: {act.dataset_name}</span>
+            {activity.length === 0 ? (
+              <div className="p-8 text-center text-xs text-[#8C827A] bg-[#FAF8F5] rounded-xl border border-[#E8E4DF]">
+                No activity recorded for this workspace yet. Activity will appear as team members create datasets and commit transformations.
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {activity.map((act) => (
+                  <div
+                    key={act.id}
+                    className="p-3.5 rounded-xl bg-[#FAF8F5] border border-[#E8E4DF] flex items-start gap-3 text-xs"
+                  >
+                    <div className="w-2.5 h-2.5 rounded-full bg-[#0061FE] mt-1.5 shrink-0" />
+                    <div className="flex-1 space-y-0.5">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-[#1E1915]">{act.actor_name}</span>
+                        <span className="text-[10px] text-[#8C827A] font-mono">{act.timestamp}</span>
+                      </div>
+                      <p className="text-[#5C554D] leading-snug">{act.details}</p>
+                      <div className="flex items-center gap-2 pt-1 font-mono text-[10px] text-[#8C827A]">
+                        <span className="px-1.5 py-0.5 rounded bg-white border border-[#E8E4DF]">
+                          {act.action}
+                        </span>
+                        <span>Target: {act.dataset_name}</span>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>

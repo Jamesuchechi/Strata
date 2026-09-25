@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import Link from "next/link";
 import {
   CreditCard,
   HardDrive,
@@ -14,15 +15,15 @@ import {
   CheckCircle2,
   AlertCircle,
   RefreshCw,
+  Upload,
 } from "lucide-react";
-import { fetchBillingUsage, upgradePlan, seedDomainSamples } from "@/lib/api";
+import { fetchBillingUsage, upgradePlan } from "@/lib/api";
 import { BillingUsageResponse } from "@/lib/types";
 
 export default function BillingPage() {
   const [billing, setBilling] = useState<BillingUsageResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isUpdating, setIsUpdating] = useState(false);
-  const [isSeeding, setIsSeeding] = useState(false);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
 
   const loadBilling = async () => {
@@ -55,20 +56,6 @@ export default function BillingPage() {
     }
   };
 
-  const handleSeedSamples = async () => {
-    setIsSeeding(true);
-    try {
-      const res = await seedDomainSamples();
-      setActionSuccess(`Domain benchmark datasets loaded: ${res.seeded_datasets?.join(", ")}`);
-      await loadBilling();
-      setTimeout(() => setActionSuccess(null), 5000);
-    } catch (err: any) {
-      alert(`Failed to load domain samples: ${err.message}`);
-    } finally {
-      setIsSeeding(false);
-    }
-  };
-
   return (
     <div className="flex-1 flex flex-col h-full bg-[#F7F5F2] overflow-y-auto">
       {/* Top Header */}
@@ -82,19 +69,28 @@ export default function BillingPage() {
               Billing, Quotas & Resource Allocation
             </h1>
             <p className="text-xs text-[#8C827A]">
-              Transparent storage limits, compute hours, dataset caps & plan management (Pillar 15).
+              Transparent storage limits, compute hours, dataset caps & plan management.
             </p>
           </div>
         </div>
 
-        <button
-          onClick={handleSeedSamples}
-          disabled={isSeeding}
-          className="px-3.5 py-1.5 rounded-xl border border-[#E8E4DF] hover:bg-[#FAF8F5] text-xs font-semibold text-[#1E1915] flex items-center gap-1.5 shadow-2xs cursor-pointer transition-colors"
-        >
-          <Sparkles className={`w-3.5 h-3.5 text-[#0061FE] ${isSeeding ? "animate-spin" : ""}`} />
-          <span>{isSeeding ? "Seeding Datasets..." : "Load Domain Benchmarks (18.2)"}</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={loadBilling}
+            disabled={isLoading}
+            className="px-3.5 py-1.5 rounded-xl border border-[#E8E4DF] bg-white hover:bg-[#FAF8F5] text-xs font-semibold text-[#1E1915] flex items-center gap-1.5 shadow-2xs cursor-pointer transition-colors"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 text-[#0061FE] ${isLoading ? "animate-spin" : ""}`} />
+            <span>Refresh</span>
+          </button>
+          <Link
+            href="/upload"
+            className="px-3.5 py-1.5 rounded-xl bg-[#0061FE] hover:bg-[#0052D4] text-white text-xs font-semibold flex items-center gap-1.5 shadow-sm transition-all"
+          >
+            <Upload className="w-3.5 h-3.5" />
+            <span>Upload Dataset</span>
+          </Link>
+        </div>
       </div>
 
       {actionSuccess && (
