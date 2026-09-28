@@ -158,22 +158,38 @@ export default function BillingPage() {
             <div className="p-5 rounded-2xl bg-white border border-[#E8E4DF] shadow-2xs space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 text-xs font-bold text-[#1E1915]">
-                  <Cpu className="w-4 h-4 text-purple-600" />
-                  <span>AutoML & AI Analyst Runs</span>
+                  <Sparkles className="w-4 h-4 text-[#0061FE]" />
+                  <span>Daily AI Analyst Quota</span>
                 </div>
                 <span className="text-xs font-mono text-[#8C827A]">
-                  {billing.ai_queries_used} / {billing.ai_queries_limit} queries
+                  {billing.ai_daily_calls_used ?? billing.ai_queries_used} / {billing.ai_daily_calls_limit ?? billing.ai_queries_limit} today
                 </span>
               </div>
               <div className="w-full h-2.5 bg-[#FAF8F5] border border-[#E8E4DF] rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-purple-500 transition-all duration-500 rounded-full"
-                  style={{ width: `${Math.round((billing.ai_queries_used / billing.ai_queries_limit) * 100)}%` }}
+                  className="h-full bg-[#0061FE] transition-all duration-500 rounded-full"
+                  style={{
+                    width: `${Math.min(
+                      100,
+                      Math.round(
+                        ((billing.ai_daily_calls_used ?? billing.ai_queries_used) /
+                          ((billing.ai_daily_calls_limit ?? billing.ai_queries_limit) || 1)) *
+                          100
+                      )
+                    )}%`,
+                  }}
                 />
               </div>
               <div className="flex justify-between text-[11px] text-[#8C827A] font-mono">
-                <span>{billing.compute_hours_used}h compute used</span>
-                <span>Resets {billing.next_billing_date}</span>
+                <span>
+                  {Math.max(
+                    0,
+                    (billing.ai_daily_calls_limit ?? billing.ai_queries_limit) -
+                      (billing.ai_daily_calls_used ?? billing.ai_queries_used)
+                  )}{" "}
+                  remaining today
+                </span>
+                <span>Resets Midnight UTC</span>
               </div>
             </div>
           </div>

@@ -251,6 +251,9 @@ export interface BillingUsageResponse {
   datasets_percentage: number;
   ai_queries_limit: number;
   ai_queries_used: number;
+  ai_daily_calls_used?: number;
+  ai_daily_calls_limit?: number;
+  ai_quota_resets_at?: string;
   compute_hours_limit: number;
   compute_hours_used: number;
   auto_ml_models_limit: number;

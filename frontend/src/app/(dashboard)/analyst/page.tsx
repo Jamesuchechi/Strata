@@ -17,9 +17,12 @@ import {
   CheckCircle2,
   Copy,
   Check,
+  AlertTriangle,
+  Clock,
+  ExternalLink,
 } from "lucide-react";
-import { executeQuery, fetchDatasets } from "@/lib/api";
-import { DatasetItem, QueryResult } from "@/lib/types";
+import { executeQuery, fetchDatasets, fetchBillingUsage } from "@/lib/api";
+import { DatasetItem, QueryResult, BillingUsageResponse } from "@/lib/types";
 
 interface ChatMessage {
   id: string;
@@ -28,6 +31,7 @@ interface ChatMessage {
   sql?: string;
   queryResult?: QueryResult;
   timestamp: string;
+  isError?: boolean;
 }
 
 export default function AnalystPage() {
@@ -49,6 +53,8 @@ function AnalystContent() {
   const [inputValue, setInputValue] = useState<string>(initialQuestion);
   const [isThinking, setIsThinking] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [billing, setBilling] = useState<BillingUsageResponse | null>(null);
+  const [copiedSqlId, setCopiedSqlId] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -60,7 +66,14 @@ function AnalystContent() {
     scrollToBottom();
   }, [messages, isThinking]);
 
+  const loadQuota = () => {
+    fetchBillingUsage()
+      .then((b) => setBilling(b))
+      .catch((err) => console.debug("Failed to fetch billing quota:", err));
+  };
+
   useEffect(() => {
+    loadQuota();
     fetchDatasets()
       .then((data) => {
         setDatasets(data);
@@ -83,7 +96,7 @@ function AnalystContent() {
             {
               id: "welcome-msg",
               sender: "analyst",
-              text: `Hello! I'm your AI Data Analyst grounded in DuckDB. I can translate your natural language queries into verified, deterministic SQL execution over "${active.filename}" (${(active.total_rows || 0).toLocaleString()} rows). What would you like to investigate?`,
+              text: `Hello! I'm your AI Data Analyst grounded in DuckDB. I translate your natural language questions into verified, sandboxed SQL queries over "${active.filename}" (${(active.total_rows || 0).toLocaleString()} rows). What would you like to investigate?`,
               timestamp: "Just now",
             },
           ]);
@@ -119,6 +132,12 @@ function AnalystContent() {
     }
   };
 
+  const handleCopySql = (id: string, sqlText: string) => {
+    navigator.clipboard.writeText(sqlText);
+    setCopiedSqlId(id);
+    setTimeout(() => setCopiedSqlId(null), 2500);
+  };
+
   const handleSendMessage = async (textToSend?: string) => {
     const question = textToSend || inputValue;
     if (!question.trim() || isThinking) return;
@@ -150,16 +169,20 @@ function AnalystContent() {
       };
 
       setMessages((prev) => [...prev, analystMsg]);
+      loadQuota();
     } catch (err: any) {
+      const isQuotaError = err.message && (err.message.includes("quota") || err.message.includes("limit exceeded") || err.message.includes("429"));
       setMessages((prev) => [
         ...prev,
         {
           id: String(Date.now() + 1),
           sender: "analyst",
-          text: `I ran into an issue analyzing the dataset: ${err.message || "Unknown error"}. Please check your target view or try rephrasing.`,
+          text: err.message || "Failed to execute analysis. Please try rephrasing your query.",
           timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+          isError: true,
         },
       ]);
+      loadQuota();
     } finally {
       setIsThinking(false);
     }
@@ -171,6 +194,10 @@ function AnalystContent() {
     `What are the most frequent values and key metrics?`,
     `Are there any missing or null values in ${selectedDataset || "this table"}?`,
   ];
+
+  const quotaUsed = billing?.ai_daily_calls_used ?? billing?.ai_queries_used ?? 0;
+  const quotaLimit = billing?.ai_daily_calls_limit ?? billing?.ai_queries_limit ?? 25;
+  const remainingCalls = Math.max(0, quotaLimit - quotaUsed);
 
   return (
     <div className="flex-1 flex flex-col h-full bg-[#F7F5F2] overflow-hidden">
@@ -185,25 +212,35 @@ function AnalystContent() {
               Conversational AI Analyst
             </h1>
             <p className="text-xs text-[#8C827A]">
-              Deterministic data reasoning grounded in DuckDB SQL execution.
+              Deterministic data reasoning grounded in DuckDB SQL execution with zero-PII security.
             </p>
           </div>
         </div>
 
-        {/* Dataset Context Selector */}
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-[#736B63] font-medium hidden sm:inline">Active Context:</span>
-          <select
-            value={selectedDataset}
-            onChange={(e) => handleDatasetChange(e.target.value)}
-            className="px-3 py-1.5 rounded-xl border border-[#E8E4DF] bg-[#FAF8F5] text-xs font-semibold text-[#1E1915] outline-none cursor-pointer"
-          >
-            {datasets.map((d) => (
-              <option key={d.id} value={d.filename}>
-                {d.filename} ({d.format.toUpperCase()})
-              </option>
-            ))}
-          </select>
+        {/* Quota & Dataset Context Selector */}
+        <div className="flex items-center gap-3">
+          {/* Daily AI Quota Badge */}
+          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#FAF8F5] border border-[#E8E4DF] text-xs font-mono text-[#5C554D]">
+            <Zap className="w-3.5 h-3.5 text-amber-500" />
+            <span>
+              <strong className="text-[#1E1915]">{remainingCalls}</strong> / {quotaLimit} queries left today
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-[#736B63] font-medium hidden sm:inline">Active Context:</span>
+            <select
+              value={selectedDataset}
+              onChange={(e) => handleDatasetChange(e.target.value)}
+              className="px-3 py-1.5 rounded-xl border border-[#E8E4DF] bg-[#FAF8F5] text-xs font-semibold text-[#1E1915] outline-none cursor-pointer"
+            >
+              {datasets.map((d) => (
+                <option key={d.id} value={d.filename}>
+                  {d.filename} ({d.format.toUpperCase()})
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
       </div>
 
@@ -221,10 +258,18 @@ function AnalystContent() {
               className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 text-xs font-bold ${
                 msg.sender === "user"
                   ? "bg-[#1E1915] text-white"
+                  : msg.isError
+                  ? "bg-rose-500 text-white shadow-sm shadow-rose-500/30"
                   : "bg-[#0061FE] text-white shadow-sm shadow-[#0061FE]/30"
               }`}
             >
-              {msg.sender === "user" ? <User className="w-4 h-4" /> : <Sparkles className="w-4 h-4" />}
+              {msg.sender === "user" ? (
+                <User className="w-4 h-4" />
+              ) : msg.isError ? (
+                <AlertTriangle className="w-4 h-4" />
+              ) : (
+                <Sparkles className="w-4 h-4" />
+              )}
             </div>
 
             {/* Message Bubble */}
@@ -232,10 +277,25 @@ function AnalystContent() {
               className={`max-w-2xl space-y-3 p-4 rounded-2xl text-xs leading-relaxed ${
                 msg.sender === "user"
                   ? "bg-[#1E1915] text-white"
+                  : msg.isError
+                  ? "bg-rose-50 border border-rose-200 text-rose-900 shadow-2xs"
                   : "bg-white border border-[#E8E4DF] text-[#1E1915] shadow-2xs"
               }`}
             >
               <div className="whitespace-pre-wrap">{msg.text}</div>
+
+              {/* Quota limit warning link if 429 */}
+              {msg.isError && msg.text.includes("limit exceeded") && (
+                <div className="pt-2 flex items-center gap-2">
+                  <Link
+                    href="/billing"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold shadow-xs transition-colors"
+                  >
+                    <span>Upgrade to Pro Plan</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </Link>
+                </div>
+              )}
 
               {/* Generated SQL Code Block (If Analyst message has SQL) */}
               {msg.sql && (
@@ -245,13 +305,32 @@ function AnalystContent() {
                       <Code2 className="w-3.5 h-3.5 text-[#0061FE]" />
                       <span>Generated DuckDB SQL</span>
                     </div>
-                    <Link
-                      href={`/query?view=${selectedView}&sql=${encodeURIComponent(msg.sql)}`}
-                      className="text-[#0061FE] hover:underline flex items-center gap-1"
-                    >
-                      <span>Open in SQL Studio</span>
-                      <ArrowRight className="w-3 h-3" />
-                    </Link>
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => handleCopySql(msg.id, msg.sql!)}
+                        className="text-[#736B63] hover:text-[#1E1915] flex items-center gap-1 cursor-pointer transition-colors"
+                        title="Copy SQL query"
+                      >
+                        {copiedSqlId === msg.id ? (
+                          <>
+                            <Check className="w-3 h-3 text-emerald-600" />
+                            <span className="text-emerald-600 font-semibold">Copied</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3 h-3" />
+                            <span>Copy</span>
+                          </>
+                        )}
+                      </button>
+                      <Link
+                        href={`/query?view=${selectedView}&sql=${encodeURIComponent(msg.sql)}`}
+                        className="text-[#0061FE] hover:underline flex items-center gap-1"
+                      >
+                        <span>Open in SQL Studio</span>
+                        <ArrowRight className="w-3 h-3" />
+                      </Link>
+                    </div>
                   </div>
                   <pre className="p-3 text-[11px] font-mono text-[#1E1915] overflow-x-auto">
                     {msg.sql}

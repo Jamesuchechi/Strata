@@ -53,9 +53,20 @@ async def get_usage_and_plan(current_user: UserModel = Depends(get_current_user)
     storage_pct = round((total_bytes / _billing_state["storage_limit_bytes"]) * 100, 2)
     dataset_pct = round((dataset_count / _billing_state["dataset_limit"]) * 100, 2)
 
+    from strata_api.ai.guardrails import quota_manager
+    plan_tier = _billing_state.get("tier", "free")
+    llm_usage_data = await quota_manager.get_usage_and_limit(
+        user_id=current_user.id,
+        plan_tier=plan_tier,
+    )
+
     return {
         **_billing_state,
-        "ai_queries_used": _billing_state.get("ai_queries_used", 0),
+        "ai_queries_used": llm_usage_data["used"],
+        "ai_queries_limit": llm_usage_data["limit"],
+        "ai_daily_calls_used": llm_usage_data["used"],
+        "ai_daily_calls_limit": llm_usage_data["limit"],
+        "ai_quota_resets_at": llm_usage_data["resets_at"],
         "auto_ml_models_used": models_used,
         "compute_hours_used": compute_hours,
         "storage_used_bytes": total_bytes,

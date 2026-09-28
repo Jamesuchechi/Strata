@@ -50,10 +50,27 @@ class Settings(BaseSettings):
     OPENROUTER_API_KEY: str = ""
     LLM_PROVIDER_ORDER: str = "groq,mistral,openrouter"
 
-    # Default models per provider
+    # Curated non-decommissioned models per provider (with automatic internal fallback)
+    GROQ_MODELS: List[str] = [
+        "llama-3.3-70b-versatile",
+        "llama-3.1-8b-instant",
+        "gemma2-9b-it",
+    ]
     GROQ_DEFAULT_MODEL: str = "llama-3.3-70b-versatile"
-    MISTRAL_DEFAULT_MODEL: str = "mistral-large-latest"
-    OPENROUTER_DEFAULT_MODEL: str = "mistralai/mistral-large"
+
+    MISTRAL_MODELS: List[str] = [
+        "mistral-small-latest",
+        "open-mistral-nemo",
+        "mistral-large-latest",
+    ]
+    MISTRAL_DEFAULT_MODEL: str = "mistral-small-latest"
+
+    OPENROUTER_MODELS: List[str] = [
+        "meta-llama/llama-3.3-70b-instruct:free",
+        "mistralai/mistral-small-24b-instruct-2501:free",
+        "google/gemini-2.0-flash-exp:free",
+    ]
+    OPENROUTER_DEFAULT_MODEL: str = "meta-llama/llama-3.3-70b-instruct:free"
 
     # Timeouts and caps
     LLM_TIMEOUT_SECONDS: int = 15

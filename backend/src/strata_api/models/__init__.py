@@ -19,6 +19,7 @@ from strata_api.models.lineage import MLModelModel
 from strata_api.models.pipeline import PipelineModel, PipelineRunModel, DeadLetterJobModel
 from strata_api.models.versioning import CommitModel, BranchModel
 from strata_api.models.showcase import ShowcaseItemModel, UserStarredShowcaseModel
+from strata_api.models.llm_usage import LLMUsageModel
 
 __all__ = [
     "Base",
@@ -46,4 +47,5 @@ __all__ = [
     "BranchModel",
     "ShowcaseItemModel",
     "UserStarredShowcaseModel",
+    "LLMUsageModel",
 ]

@@ -127,7 +127,8 @@ export async function fetchLineageGraph(): Promise<any> {
 export async function executeQuery(
   viewName: string,
   sql?: string,
-  naturalLanguageQuestion?: string
+  naturalLanguageQuestion?: string,
+  limit?: number
 ): Promise<QueryResult> {
   const response = await apiFetch(`${API_BASE}/query`, {
     method: "POST",
@@ -136,12 +137,19 @@ export async function executeQuery(
       view_name: viewName,
       sql,
       natural_language_question: naturalLanguageQuestion,
+      limit,
     }),
   });
 
   if (!response.ok) {
     const err = await response.json().catch(() => ({ detail: "Query failed" }));
-    throw new Error(err.detail || `Query failed with status ${response.status}`);
+    let errorMsg = `Query failed with status ${response.status}`;
+    if (typeof err.detail === "object" && err.detail !== null) {
+      errorMsg = err.detail.message || err.detail.error || JSON.stringify(err.detail);
+    } else if (typeof err.detail === "string") {
+      errorMsg = err.detail;
+    }
+    throw new Error(errorMsg);
   }
 
   return response.json();

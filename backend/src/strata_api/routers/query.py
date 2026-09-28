@@ -56,13 +56,29 @@ async def execute_query(
             error=result.get("error"),
         )
     elif req.natural_language_question:
+        if not req.view_name:
+            raise HTTPException(status_code=400, detail="'view_name' is required when asking natural language questions.")
+        
+        target_view = req.view_name
+        schema_data = None
+        summary_data = []
+
+        ds = find_dataset_by_name_or_id(req.view_name)
+        if ds:
+            target_view = ds.get("view_name") or req.view_name
+            schema_data = ds.get("schema")
+            summary_data = ds.get("column_summaries", [])
+
         analyst = ConversationalAnalyst(executor)
-        # Mock schema inspection for query coordinator
         res = await analyst.analyze(
-            view_name=req.view_name,
+            view_name=target_view,
             question=req.natural_language_question,
-            schema=[{"name": "*"}],
-            column_summaries=[],
+            schema=schema_data,
+            column_summaries=summary_data,
+            user_id=current_user.id,
+            workspace_id=ds.get("workspace_id") if ds else None,
+            plan_tier=getattr(current_user, "plan_tier", "free"),
+            dataset_version=ds.get("current_version") if ds else None,
         )
         exec_res = res["results"]
         return QueryResponse(
