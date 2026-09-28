@@ -76,6 +76,10 @@ async def test_validate_sql_unit_checks():
     with pytest.raises(ValueError, match="Statement type StatementType.DROP is not allowed"):
         validate_sql("DROP TABLE some_table", engine.conn)
 
+    # Double-quoted column identifiers with spaces and special characters must be accepted
+    complex_query = 'SELECT COUNT(DISTINCT "State/UTs") AS state_count, SUM("Total Cases") AS total_cases FROM view_test;'
+    validate_sql(complex_query, engine.conn)
+
 
 @pytest.mark.asyncio
 async def test_api_query_rejects_read_csv_auto():

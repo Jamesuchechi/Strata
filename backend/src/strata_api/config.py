@@ -52,25 +52,25 @@ class Settings(BaseSettings):
 
     # Curated non-decommissioned models per provider (with automatic internal fallback)
     GROQ_MODELS: List[str] = [
-        "llama-3.3-70b-versatile",
-        "llama-3.1-8b-instant",
-        "gemma2-9b-it",
+        "openai/gpt-oss-120b",
+        "openai/gpt-oss-20b",
+        "qwen/qwen3.8-27b",
     ]
-    GROQ_DEFAULT_MODEL: str = "llama-3.3-70b-versatile"
+    GROQ_DEFAULT_MODEL: str = "openai/gpt-oss-120b"
 
     MISTRAL_MODELS: List[str] = [
+        "codestral-latest",
+        "ministral-8b-latest",
         "mistral-small-latest",
-        "open-mistral-nemo",
-        "mistral-large-latest",
     ]
-    MISTRAL_DEFAULT_MODEL: str = "mistral-small-latest"
+    MISTRAL_DEFAULT_MODEL: str = "codestral-latest"
 
     OPENROUTER_MODELS: List[str] = [
+        "liquid/lfm-2.5-2.6b:free",
         "meta-llama/llama-3.3-70b-instruct:free",
-        "mistralai/mistral-small-24b-instruct-2501:free",
         "google/gemini-2.0-flash-exp:free",
     ]
-    OPENROUTER_DEFAULT_MODEL: str = "meta-llama/llama-3.3-70b-instruct:free"
+    OPENROUTER_DEFAULT_MODEL: str = "liquid/lfm-2.5-2.6b:free"
 
     # Timeouts and caps
     LLM_TIMEOUT_SECONDS: int = 15

@@ -75,6 +75,82 @@ class ConversationalAnalyst:
             lines.append("  " + ", ".join(parts))
         return "\n".join(lines) if lines else "No statistical summaries provided."
 
+    def _extract_clean_sql(self, sql_raw: Any, fallback_text: str = "") -> Optional[str]:
+        """Extract a single clean SQL statement from various LLM response formats."""
+        if sql_raw is None:
+            # Check if there is an embedded SQL code fence in the fallback text
+            match = re.search(
+                r"```(?:sql)?\s*(SELECT\b[\s\S]*?|WITH\b[\s\S]*?|DESCRIBE\b[\s\S]*?|EXPLAIN\b[\s\S]*?|SHOW\b[\s\S]*?)\s*```",
+                fallback_text,
+                re.IGNORECASE,
+            )
+            if match:
+                return match.group(1).strip()
+            return None
+
+        # If it's a list (e.g. [{"sql": "SELECT ..."}], ["SELECT ..."])
+        if isinstance(sql_raw, list):
+            for item in sql_raw:
+                extracted = self._extract_clean_sql(item)
+                if extracted:
+                    return extracted
+            return None
+
+        # If it's a dict (e.g. {"sql": "SELECT ..."}, {"query": "SELECT ..."})
+        if isinstance(sql_raw, dict):
+            for k in ("sql", "query", "sql_query", "statement"):
+                if k in sql_raw:
+                    extracted = self._extract_clean_sql(sql_raw[k])
+                    if extracted:
+                        return extracted
+            return None
+
+        # If it's a string
+        if isinstance(sql_raw, str):
+            s = sql_raw.strip()
+            if s.lower() in ("null", "none", "", "n/a"):
+                return None
+
+            # Remove markdown code blocks if present
+            if "```" in s:
+                fence_match = re.search(
+                    r"```(?:sql)?\s*([\s\S]*?)\s*```",
+                    s,
+                    re.IGNORECASE,
+                )
+                if fence_match:
+                    s = fence_match.group(1).strip()
+
+            # If the string looks like a JSON array or object string "[{...}]" or '{"sql": ...}'
+            if (s.startswith("[") and s.endswith("]")) or (s.startswith("{") and s.endswith("}")):
+                try:
+                    nested_parsed = json.loads(s)
+                    extracted = self._extract_clean_sql(nested_parsed)
+                    if extracted:
+                        return extracted
+                except Exception:
+                    pass
+
+            # If it's a python list-like string `[{...}]` that failed json.loads
+            if s.startswith("[") and s.endswith("]"):
+                sql_pattern = re.search(
+                    r"(SELECT\b[\s\S]+?|WITH\b[\s\S]+?)(?:'|\"|\Z)",
+                    s,
+                    re.IGNORECASE,
+                )
+                if sql_pattern:
+                    s = sql_pattern.group(1).strip()
+                else:
+                    return None
+
+            # If it still starts with curly brace or bracket, it's not a valid SQL string
+            if s.startswith("{") or s.startswith("["):
+                return None
+
+            return s
+
+        return None
+
     def _parse_llm_json(self, raw_text: str) -> Dict[str, Any]:
         """Extract and parse structured JSON from LLM completion output."""
         cleaned = raw_text.strip()
@@ -84,28 +160,49 @@ class ConversationalAnalyst:
             cleaned = re.sub(r"\s*```$", "", cleaned)
             cleaned = cleaned.strip()
 
+        parsed: Any = None
         try:
             parsed = json.loads(cleaned)
-            if isinstance(parsed, dict):
-                return parsed
         except json.JSONDecodeError:
-            pass
+            match = re.search(r"\{[\s\S]*\}", cleaned)
+            if match:
+                try:
+                    parsed = json.loads(match.group(0))
+                except json.JSONDecodeError:
+                    pass
+            if not parsed:
+                arr_match = re.search(r"\[[\s\S]*\]", cleaned)
+                if arr_match:
+                    try:
+                        parsed = json.loads(arr_match.group(0))
+                    except json.JSONDecodeError:
+                        pass
 
-        # Try to locate the first outer JSON object {...}
-        match = re.search(r"\{.*\}", cleaned, re.DOTALL)
-        if match:
-            try:
-                parsed = json.loads(match.group(0))
-                if isinstance(parsed, dict):
-                    return parsed
-            except json.JSONDecodeError:
-                pass
+        if isinstance(parsed, list):
+            for item in parsed:
+                if isinstance(item, dict) and ("sql" in item or "explanation" in item or "query" in item):
+                    parsed = item
+                    break
+
+        if isinstance(parsed, dict):
+            raw_sql = parsed.get("sql", parsed.get("query", parsed.get("sql_query")))
+            explanation = parsed.get("explanation", parsed.get("summary", ""))
+            clean_sql = self._extract_clean_sql(raw_sql, fallback_text=cleaned)
+            return {
+                "sql": clean_sql,
+                "explanation": str(explanation) if explanation else "",
+            }
 
         # Fallback regex extraction for sql and explanation
-        sql_match = re.search(r'"sql"\s*:\s*"([^"]+)"', cleaned)
+        clean_sql = self._extract_clean_sql(None, fallback_text=cleaned)
+        if not clean_sql:
+            sql_match = re.search(r'"sql"\s*:\s*"([^"]+)"', cleaned)
+            if sql_match:
+                clean_sql = self._extract_clean_sql(sql_match.group(1))
+
         explanation_match = re.search(r'"explanation"\s*:\s*"([^"]+)"', cleaned)
         return {
-            "sql": sql_match.group(1) if sql_match else None,
+            "sql": clean_sql,
             "explanation": explanation_match.group(1) if explanation_match else cleaned,
         }
 

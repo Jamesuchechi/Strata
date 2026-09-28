@@ -783,9 +783,30 @@ export async function forkShowcaseDataset(datasetId: string): Promise<{
   return res.json();
 }
 
+export async function publishToShowcase(payload: {
+  dataset_id: string;
+  domain: string;
+  license: string;
+  tags?: string[];
+  description?: string;
+  doi?: string;
+}): Promise<any> {
+  const res = await apiFetch(`${API_BASE}/showcase/publish`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Failed to publish dataset (${res.status})`);
+  }
+  return res.json();
+}
+
 // -------------------------------------------------------------
 // Track 3.4: Pipelines, Compute Sandboxes, Integrations, Security & Admin
 // -------------------------------------------------------------
+
 
 export async function fetchPipelines(): Promise<{ pipelines: import("./types").PipelineItem[]; total: number }> {
   const res = await apiFetch(`${API_BASE}/pipelines`);
@@ -822,7 +843,7 @@ export async function pipelineDryRun(req: { dataset_id: string; steps: any[]; sa
   return res.json();
 }
 
-export async function runPipeline(pipelineId: string): Promise<{ status: string; run: import("./types").PipelineRun }> {
+export async function runPipeline(pipelineId: string): Promise<{ status: string; job_id?: string; run_id?: string; run?: import("./types").PipelineRun; message?: string }> {
   const res = await apiFetch(`${API_BASE}/pipelines/${encodeURIComponent(pipelineId)}/run`, {
     method: "POST",
   });
@@ -832,6 +853,21 @@ export async function runPipeline(pipelineId: string): Promise<{ status: string;
   }
   return res.json();
 }
+
+export async function fetchJobStatus(jobId: string): Promise<{
+  job_id: string;
+  status: "queued" | "in_progress" | "complete" | "failed" | "not_found";
+  result?: any;
+  error?: string;
+}> {
+  const res = await apiFetch(`${API_BASE}/jobs/${encodeURIComponent(jobId)}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Failed to query job status (${res.status})`);
+  }
+  return res.json();
+}
+
 
 export async function fetchPipelineRuns(pipelineId?: string): Promise<{ runs: import("./types").PipelineRun[]; total: number }> {
   const url = pipelineId ? `${API_BASE}/pipelines/runs?pipeline_id=${encodeURIComponent(pipelineId)}` : `${API_BASE}/pipelines/runs`;

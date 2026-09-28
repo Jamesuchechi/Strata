@@ -75,7 +75,7 @@ def validate_sql(sql: str, duckdb_conn: Optional[duckdb.DuckDBPyConnection] = No
         elif match.group("double_quote"):
             lit = match.group("double_quote")
             literals.append(lit)
-            cleaned_tokens.append('""')
+            cleaned_tokens.append('"__col__"')
         elif match.group("block_comment") or match.group("line_comment"):
             cleaned_tokens.append(" ")
 
@@ -100,7 +100,7 @@ def validate_sql(sql: str, duckdb_conn: Optional[duckdb.DuckDBPyConnection] = No
     # 4. Check statement types using DuckDB parser if conn is available
     if duckdb_conn:
         try:
-            stmts = duckdb_conn.extract_statements(cleaned_sql)
+            stmts = duckdb_conn.extract_statements(sql)
         except Exception as e:
             raise ValueError(f"SQL parsing error: {e}")
 

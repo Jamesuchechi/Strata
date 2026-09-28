@@ -5,7 +5,7 @@ Pillar 11: 11.2, 11.3, 11.4, 11.5, 11.6, 11.7
 import os
 import shutil
 import hashlib
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Set
 from collections import defaultdict
 from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, Query, Depends
@@ -84,169 +84,23 @@ LICENSES_CATALOG = [
 ]
 
 # ---------------------------------------------------------------------------
-# Curated Public Showcase Registry (Pillars 11.2, 11.6)
+# Public Showcase Registry (Dynamically populated from real published datasets)
 # ---------------------------------------------------------------------------
 
-_showcase_registry: Dict[str, Dict[str, Any]] = {
-    "showcase_climate_risk": {
-        "id": "showcase_climate_risk",
-        "title": "Global Severe Weather & Climate Risk Index (1980–2024)",
-        "slug": "global-severe-weather-climate-risk",
-        "domain": "Geospatial & Climate",
-        "description": "High-resolution geospatial registry of extreme climate events, regional temperature anomalies, economic damage, and disaster vulnerability scores.",
-        "author": "Dr. Helena Vance, Earth Dynamics Lab",
-        "author_avatar": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100",
-        "author_verified": True,
-        "format": "parquet",
-        "license": "CC-BY-4.0",
-        "doi": "10.5281/strata.climate.84920",
-        "tags": ["climate", "geospatial", "weather", "risk", "environment"],
-        "total_rows": 142850,
-        "total_columns": 14,
-        "size_bytes": 18450000,
-        "quality_score": 98,
-        "stars": 412,
-        "downloads": 3840,
-        "forks": 158,
-        "updated_at": "2026-03-14T09:20:00Z",
-        "schema_fields": [
-            {"name": "event_id", "type": "VARCHAR", "description": "Unique climate hazard identifier"},
-            {"name": "latitude", "type": "DOUBLE", "description": "Centroid latitude in WGS84"},
-            {"name": "longitude", "type": "DOUBLE", "description": "Centroid longitude in WGS84"},
-            {"name": "country_iso", "type": "VARCHAR", "description": "ISO 3166-1 alpha-3 territory code"},
-            {"name": "hazard_type", "type": "VARCHAR", "description": "Drought, Flood, Tropical Cyclone, Wildfire, Heatwave"},
-            {"name": "anomaly_celsius", "type": "DOUBLE", "description": "Surface temperature deviation from 1951-1980 baseline"},
-            {"name": "estimated_damage_usd_m", "type": "DOUBLE", "description": "Economic asset loss in millions USD"},
-            {"name": "vulnerability_index", "type": "DOUBLE", "description": "Standardized ND-GAIN infrastructure vulnerability (0-1)"},
-            {"name": "year", "type": "BIGINT", "description": "Observation year"},
-        ],
-        "sample_rows": [
-            {"event_id": "EV-2024-FL-001", "latitude": 45.4215, "longitude": -75.6972, "country_iso": "CAN", "hazard_type": "Flood", "anomaly_celsius": 1.84, "estimated_damage_usd_m": 420.5, "vulnerability_index": 0.28, "year": 2024},
-            {"event_id": "EV-2024-WF-089", "latitude": -33.8688, "longitude": 151.2093, "country_iso": "AUS", "hazard_type": "Wildfire", "anomaly_celsius": 2.45, "estimated_damage_usd_m": 1280.0, "vulnerability_index": 0.35, "year": 2024},
-            {"event_id": "EV-2023-HW-142", "latitude": 37.9838, "longitude": 23.7275, "country_iso": "GRC", "hazard_type": "Heatwave", "anomaly_celsius": 3.10, "estimated_damage_usd_m": 155.2, "vulnerability_index": 0.42, "year": 2023},
-            {"event_id": "EV-2023-TC-201", "latitude": 14.5995, "longitude": 120.9842, "country_iso": "PHL", "hazard_type": "Tropical Cyclone", "anomaly_celsius": 1.22, "estimated_damage_usd_m": 890.4, "vulnerability_index": 0.74, "year": 2023},
-        ],
-        "sample_query": "SELECT hazard_type, country_iso, AVG(estimated_damage_usd_m) as avg_loss_usd_m\nFROM climate_risk\nWHERE year >= 2020\nGROUP BY hazard_type, country_iso\nORDER BY avg_loss_usd_m DESC\nLIMIT 10;",
-    },
-    "showcase_fintech_fraud": {
-        "id": "showcase_fintech_fraud",
-        "title": "Synthetic High-Frequency Fintech Transaction Fraud Benchmark",
-        "slug": "fintech-transaction-fraud-benchmark",
-        "domain": "Fintech & Security",
-        "description": "Statistically calibrated financial ledger with multi-factor fraud signatures, velocity spikes, card-not-present signals, and chargeback outcomes.",
-        "author": "Marcus Sterling, Quantitative Integrity Group",
-        "author_avatar": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100",
-        "author_verified": True,
-        "format": "parquet",
-        "license": "Apache-2.0",
-        "doi": "10.5281/strata.fintech.99214",
-        "tags": ["fintech", "fraud", "finance", "transactions", "aml", "classification"],
-        "total_rows": 250000,
-        "total_columns": 11,
-        "size_bytes": 22300000,
-        "quality_score": 96,
-        "stars": 628,
-        "downloads": 5210,
-        "forks": 242,
-        "updated_at": "2026-03-18T14:45:00Z",
-        "schema_fields": [
-            {"name": "tx_id", "type": "VARCHAR", "description": "Unique SHA256 hashed transaction identifier"},
-            {"name": "timestamp", "type": "TIMESTAMP", "description": "UTC transaction execution timestamp"},
-            {"name": "amount_usd", "type": "DOUBLE", "description": "Authorized transaction value in USD"},
-            {"name": "merchant_category", "type": "VARCHAR", "description": "Electronics, Luxury, Grocery, Gaming, Crypto"},
-            {"name": "card_present", "type": "BOOLEAN", "description": "Physical terminal EMV chip verification flag"},
-            {"name": "device_risk_score", "type": "DOUBLE", "description": "Fingerprint risk telemetry (0.0 to 1.0)"},
-            {"name": "ip_country_match", "type": "BOOLEAN", "description": "Geo-IP billing address alignment"},
-            {"name": "is_fraudulent", "type": "BIGINT", "description": "Ground truth fraud label (0=Legitimate, 1=Confirmed Fraud)"},
-        ],
-        "sample_rows": [
-            {"tx_id": "tx_9f81a702b", "timestamp": "2026-03-18T10:14:02Z", "amount_usd": 1420.50, "merchant_category": "Crypto", "card_present": False, "device_risk_score": 0.88, "ip_country_match": False, "is_fraudulent": 1},
-            {"tx_id": "tx_3b11894ec", "timestamp": "2026-03-18T10:15:33Z", "amount_usd": 45.20, "merchant_category": "Grocery", "card_present": True, "device_risk_score": 0.05, "ip_country_match": True, "is_fraudulent": 0},
-            {"tx_id": "tx_c478120fa", "timestamp": "2026-03-18T10:16:19Z", "amount_usd": 890.00, "merchant_category": "Electronics", "card_present": False, "device_risk_score": 0.72, "ip_country_match": True, "is_fraudulent": 1},
-            {"tx_id": "tx_7e93012bb", "timestamp": "2026-03-18T10:17:45Z", "amount_usd": 12.50, "merchant_category": "Coffee", "card_present": True, "device_risk_score": 0.02, "ip_country_match": True, "is_fraudulent": 0},
-        ],
-        "sample_query": "SELECT merchant_category, COUNT(*) as total_tx, SUM(is_fraudulent) as fraud_count, ROUND(AVG(is_fraudulent) * 100, 2) as fraud_rate_pct\nFROM fintech_fraud\nGROUP BY merchant_category\nORDER BY fraud_rate_pct DESC;",
-    },
-    "showcase_fda_molecules": {
-        "id": "showcase_fda_molecules",
-        "title": "Bioactive Drug Discovery Molecules & Protein Binding Assays",
-        "slug": "bioactive-drug-discovery-molecules",
-        "domain": "Healthcare & Chemistry",
-        "description": "Curated chemical library of 28,000 small molecules with verified SMILES, IUPAC descriptors, LogP, molecular weight, hydrogen bond donors, and bioactivity.",
-        "author": "Dr. Sarah Lin, Computational Therapeutics Hub",
-        "author_avatar": "https://images.unsplash.com/photo-1580489944761-15a19d654956?w=100",
-        "author_verified": True,
-        "format": "sdf",
-        "license": "MIT",
-        "doi": "10.5281/strata.pharma.41092",
-        "tags": ["chemistry", "sdf", "pharma", "molecules", "bioinformatics", "drug-discovery"],
-        "total_rows": 28400,
-        "total_columns": 10,
-        "size_bytes": 14500000,
-        "quality_score": 99,
-        "stars": 349,
-        "downloads": 2490,
-        "forks": 110,
-        "updated_at": "2026-03-20T11:00:00Z",
-        "schema_fields": [
-            {"name": "chembl_id", "type": "VARCHAR", "description": "ChEMBL compound access code"},
-            {"name": "smiles", "type": "VARCHAR", "description": "Simplified molecular-input line-entry specification"},
-            {"name": "mw_daltons", "type": "DOUBLE", "description": "Molecular weight in g/mol"},
-            {"name": "alogp", "type": "DOUBLE", "description": "Calculated octanol-water partition coefficient"},
-            {"name": "hba_count", "type": "BIGINT", "description": "Hydrogen bond acceptors count"},
-            {"name": "hbd_count", "type": "BIGINT", "description": "Hydrogen bond donors count"},
-            {"name": "psa_angstrom2", "type": "DOUBLE", "description": "Polar surface area in square angstroms"},
-            {"name": "target_protein", "type": "VARCHAR", "description": "Primary enzymatic target protein"},
-            {"name": "binding_affinity_nm", "type": "DOUBLE", "description": "IC50 / Kd binding concentration in nM"},
-        ],
-        "sample_rows": [
-            {"chembl_id": "CHEMBL25", "smiles": "c1ccccc1NC(=O)C", "mw_daltons": 135.17, "alogp": 1.16, "hba_count": 1, "hbd_count": 1, "psa_angstrom2": 29.10, "target_protein": "COX-2", "binding_affinity_nm": 42.5},
-            {"chembl_id": "CHEMBL112", "smiles": "CC(=O)Oc1ccccc1C(=O)O", "mw_daltons": 180.16, "alogp": 1.31, "hba_count": 3, "hbd_count": 1, "psa_angstrom2": 63.60, "target_protein": "COX-1", "binding_affinity_nm": 18.0},
-            {"chembl_id": "CHEMBL501", "smiles": "CN1CCN(CC1)C(=O)c2cc3ccccc3[nH]2", "mw_daltons": 243.31, "alogp": 0.85, "hba_count": 3, "hbd_count": 1, "psa_angstrom2": 35.80, "target_protein": "5-HT2A", "binding_affinity_nm": 8.4},
-        ],
-        "sample_query": "SELECT target_protein, COUNT(*) as compounds_tested, ROUND(AVG(binding_affinity_nm), 2) as mean_affinity_nm\nFROM drug_molecules\nWHERE alogp BETWEEN 0.5 AND 3.5\nGROUP BY target_protein\nORDER BY mean_affinity_nm ASC;",
-    },
-    "showcase_ecommerce_cohorts": {
-        "id": "showcase_ecommerce_cohorts",
-        "title": "Direct-to-Consumer Customer Cohort LTV & Attribution Ledger",
-        "slug": "dtc-customer-cohort-ltv-attribution",
-        "domain": "E-Commerce & Retail",
-        "description": "Multi-year transactional cohort dataset tracking CAC payback, first-order basket sizes, repurchase intervals, channel CAC, and lifetime margin.",
-        "author": "E-Commerce Growth Consortium",
-        "author_avatar": "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=100",
-        "author_verified": False,
-        "format": "csv",
-        "license": "ODC-ODbL",
-        "doi": "10.5281/strata.growth.77102",
-        "tags": ["ecommerce", "cohorts", "ltv", "marketing", "retail", "cac"],
-        "total_rows": 95000,
-        "total_columns": 10,
-        "size_bytes": 11200000,
-        "quality_score": 94,
-        "stars": 285,
-        "downloads": 2180,
-        "forks": 98,
-        "updated_at": "2026-03-12T16:30:00Z",
-        "schema_fields": [
-            {"name": "user_id", "type": "VARCHAR", "description": "Customer identifier"},
-            {"name": "acquisition_cohort", "type": "VARCHAR", "description": "First purchase month (YYYY-MM)"},
-            {"name": "channel", "type": "VARCHAR", "description": "Acquisition marketing channel (Paid Search, Organic, TikTok, Email)"},
-            {"name": "initial_order_value", "type": "DOUBLE", "description": "First order gross revenue in USD"},
-            {"name": "repurchase_count_12m", "type": "BIGINT", "description": "Number of repeat orders within 12 months"},
-            {"name": "ltv_12m_usd", "type": "DOUBLE", "description": "Total gross revenue generated in 12 months"},
-            {"name": "net_margin_pct", "type": "DOUBLE", "description": "Contribution margin percentage after COGS and shipping"},
-        ],
-        "sample_rows": [
-            {"user_id": "USR-8490", "acquisition_cohort": "2025-01", "channel": "Paid Search", "initial_order_value": 78.50, "repurchase_count_12m": 3, "ltv_12m_usd": 245.00, "net_margin_pct": 0.42},
-            {"user_id": "USR-8491", "acquisition_cohort": "2025-01", "channel": "TikTok", "initial_order_value": 34.00, "repurchase_count_12m": 0, "ltv_12m_usd": 34.00, "net_margin_pct": 0.38},
-            {"user_id": "USR-8492", "acquisition_cohort": "2025-02", "channel": "Organic", "initial_order_value": 112.00, "repurchase_count_12m": 5, "ltv_12m_usd": 590.00, "net_margin_pct": 0.51},
-        ],
-        "sample_query": "SELECT acquisition_cohort, channel, AVG(initial_order_value) as avg_aov, AVG(ltv_12m_usd) as avg_12m_ltv\nFROM ecommerce_cohorts\nGROUP BY acquisition_cohort, channel\nORDER BY acquisition_cohort DESC;",
-    },
-}
+_showcase_registry: Dict[str, Dict[str, Any]] = {}
 
 # User starred showcase items scoped per user_id
-_user_starred_showcase: Dict[str, set] = defaultdict(set)
+_user_starred_showcase: Dict[str, Set[str]] = defaultdict(set)
+
+
+class PublishShowcaseRequest(BaseModel):
+    dataset_id: str
+    domain: str = "General Science"
+    license: str = "CC-BY-4.0"
+    tags: List[str] = Field(default_factory=list)
+    description: Optional[str] = None
+    doi: Optional[str] = None
+
 
 
 # ---------------------------------------------------------------------------
@@ -330,6 +184,93 @@ def _generate_embed_snippets(item: Dict[str, Any], theme: str = "light", show_sc
 # Endpoints
 # ---------------------------------------------------------------------------
 
+@router.post("/publish")
+async def publish_dataset_to_showcase(
+    req: PublishShowcaseRequest,
+    current_user: UserModel = Depends(get_current_user),
+):
+    """Publish a real workspace dataset to the Public Showcase & Hub (Pillar 11.2)."""
+    seed_default_datasets_if_needed()
+    record = _datasets_db.get(req.dataset_id)
+    if not record:
+        for r in _datasets_db.values():
+            if (
+                r.get("id") == req.dataset_id
+                or r.get("filename") == req.dataset_id
+                or r.get("name") == req.dataset_id
+                or r.get("view_name") == req.dataset_id
+                or (r.get("content_hash") and r["content_hash"].startswith(req.dataset_id))
+            ):
+                record = r
+                break
+    if not record:
+        raise HTTPException(status_code=404, detail=f"Dataset '{req.dataset_id}' not found in workspace.")
+
+
+    showcase_id = f"showcase_{record['id']}"
+    author_name = getattr(current_user, "full_name", None) or getattr(current_user, "email", None) or "Strata Community"
+
+
+    schema_fields = record.get("schema_fields", [])
+    sample_rows = record.get("preview_rows", [])[:20]
+    view_name = record.get("view_name", "dataset_view")
+    sample_query = f"SELECT * FROM {view_name} LIMIT 10;"
+    tags = list(set((req.tags or []) + (record.get("tags") or [])))
+
+    raw_quality = record.get("full_quality")
+    if isinstance(raw_quality, dict):
+        q_score = float(raw_quality.get("overall_score") or raw_quality.get("score") or 95.0)
+    elif raw_quality is not None:
+        try:
+            q_score = float(raw_quality)
+        except (ValueError, TypeError):
+            q_score = 95.0
+    else:
+        q_score = float(record.get("quality_score", 95.0))
+
+    title = record.get("name") or record.get("filename") or str(record.get("id", "dataset"))
+    slug = title.lower().replace(" ", "-").replace(".", "-")
+
+    item = {
+        "id": showcase_id,
+        "title": title,
+        "slug": slug,
+        "domain": req.domain or "General Science",
+        "description": req.description or record.get("description") or f"Public dataset '{title}' published via Strata.",
+        "author": author_name,
+        "author_avatar": None,
+        "author_verified": True,
+        "format": record.get("format", "parquet"),
+        "license": req.license or "CC-BY-4.0",
+        "doi": req.doi or f"10.5281/strata.{record['id']}",
+        "tags": tags,
+        "total_rows": record.get("total_rows", 0),
+        "total_columns": record.get("total_columns", 0),
+        "size_bytes": record.get("size_bytes", 0),
+        "quality_score": q_score,
+        "stars": 0,
+        "downloads": 0,
+        "forks": 0,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "schema_fields": schema_fields,
+        "sample_rows": sample_rows,
+        "sample_query": sample_query,
+        "dataset_id": record["id"],
+        "owner_id": current_user.id,
+    }
+
+
+    _showcase_registry[showcase_id] = item
+    save_showcase_item_to_db(item)
+
+    return {
+        "status": "published",
+        "message": f"Dataset '{item['title']}' has been published to the Public Showcase!",
+        "showcase_id": showcase_id,
+        "dataset": item,
+    }
+
+
 # Public-by-design endpoint:
 # Open data showcase catalog allowing public visitors and researchers to discover
 # community and benchmark datasets without an active user session.
@@ -378,9 +319,15 @@ async def list_showcase_datasets(
         copy_item["is_starred"] = item["id"] in user_stars
         enriched.append(copy_item)
 
+    domains = ["All"]
+    for i in _showcase_registry.values():
+        d = i.get("domain")
+        if d and d not in domains:
+            domains.append(d)
+
     return {
         "total": len(enriched),
-        "domains": ["All", "Geospatial & Climate", "Fintech & Security", "Healthcare & Chemistry", "E-Commerce & Retail"],
+        "domains": domains,
         "datasets": enriched,
     }
 
@@ -516,21 +463,28 @@ async def fork_showcase_dataset(
         raise HTTPException(status_code=404, detail="Showcase dataset not found")
 
     storage_dir = get_storage_dir()
-    new_dataset_id = f"fork_{item['id']}_{int(datetime.now(timezone.utc).timestamp())}"
-    target_filename = f"{new_dataset_id}.csv"
-    target_path = os.path.join(storage_dir, target_filename)
-
-    # Write sample rows to local CSV file
-    import polars as pl
-    sample_rows = item.get("sample_rows", [])
-    if sample_rows:
-        df = pl.DataFrame(sample_rows)
-        df.write_csv(target_path)
+    source_record = _datasets_db.get(item.get("dataset_id", ""))
+    if source_record and os.path.exists(source_record.get("file_path", "")):
+        source_ext = os.path.splitext(source_record["filename"])[1] or f".{source_record.get('format', 'parquet')}"
+        new_dataset_id = f"fork_{item['id']}_{int(datetime.now(timezone.utc).timestamp())}"
+        target_filename = f"Fork_{source_record['filename']}"
+        target_path = os.path.join(storage_dir, f"{new_dataset_id}{source_ext}")
+        shutil.copyfile(source_record["file_path"], target_path)
     else:
-        with open(target_path, "w") as f:
-            f.write("id,sample_value\n1,dummy\n")
+        new_dataset_id = f"fork_{item['id']}_{int(datetime.now(timezone.utc).timestamp())}"
+        target_filename = f"{new_dataset_id}.csv"
+        target_path = os.path.join(storage_dir, target_filename)
+        import polars as pl
+        sample_rows = item.get("sample_rows", [])
+        if sample_rows:
+            df = pl.DataFrame(sample_rows)
+            df.write_csv(target_path)
+        else:
+            with open(target_path, "w") as f:
+                f.write("id,sample_value\n1,dummy\n")
 
     content_hash = hashlib.sha256(open(target_path, "rb").read()).hexdigest()
+
 
     # Register into user catalog (_datasets_db) with ownership assigned to current_user.id
     new_reg = register_dataset_in_store(

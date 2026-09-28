@@ -48,9 +48,9 @@ class GroqProvider:
     """Groq API provider with 3 curated, active, non-decommissioned models.
 
     Models:
-    1. llama-3.3-70b-versatile (Primary high-performance model)
-    2. llama-3.1-8b-instant (Fast, lightweight fallback)
-    3. gemma2-9b-it (Google Gemma 2 instruction-tuned on Groq)
+    1. openai/gpt-oss-120b (Primary high-performance reasoning model)
+    2. openai/gpt-oss-20b (Fast, lightweight fallback)
+    3. qwen/qwen3.8-27b (Instruction-tuned Qwen model on Groq)
     """
 
     provider_name = "groq"
@@ -155,9 +155,9 @@ class MistralProvider:
     """Mistral AI API provider with 3 curated, active, non-decommissioned models.
 
     Models:
-    1. mistral-small-latest (Cost-effective fast reasoning)
-    2. open-mistral-nemo (12B open-weight model with 128k context)
-    3. mistral-large-latest (Flagship large language model)
+    1. codestral-latest (Dedicated code and SQL generator)
+    2. ministral-8b-latest (Fast, efficient lightweight model)
+    3. mistral-small-latest (General reasoning model)
     """
 
     provider_name = "mistral"
@@ -261,8 +261,8 @@ class OpenRouterProvider:
     """OpenRouter API provider with 3 curated, active, non-decommissioned free models.
 
     Models:
-    1. meta-llama/llama-3.3-70b-instruct:free (Open Llama 3.3 70B free tier)
-    2. mistralai/mistral-small-24b-instruct-2501:free (Mistral Small 24B free tier)
+    1. liquid/lfm-2.5-2.6b:free (Fast free instruction model)
+    2. meta-llama/llama-3.3-70b-instruct:free (Open Llama 3.3 70B free tier)
     3. google/gemini-2.0-flash-exp:free (Google Gemini 2.0 Flash experimental free tier)
     """
 

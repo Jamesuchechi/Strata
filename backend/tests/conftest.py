@@ -1,9 +1,9 @@
-"""Pytest fixtures for Strata backend test suite.
-Provides isolated in-memory test fixtures for datasets, models, and pipelines during testing
-so that production code starts 100% clean with zero pre-seeded mock records.
-"""
-
 import os
+
+# Isolate all tests to a separate test SQLite database and storage directory
+os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///./data/test_strata.db"
+os.environ["LOCAL_STORAGE_DIR"] = "./data/test_storage"
+
 import hashlib
 import tempfile
 import concurrent.futures
@@ -11,6 +11,12 @@ import asyncio
 import pytest
 import polars as pl
 from sqlalchemy import select
+
+from strata_api.config import settings
+
+# Apply test overrides to settings instance
+settings.DATABASE_URL = "sqlite+aiosqlite:///./data/test_strata.db"
+settings.LOCAL_STORAGE_DIR = "./data/test_storage"
 
 from strata_api.core.database import AsyncSessionLocal, init_db
 from strata_api.models.user import UserModel
@@ -34,6 +40,8 @@ AUTH_HEADERS_B = {"Authorization": f"Bearer {TEST_TOKEN_B}"}
 
 async def _seed_users_coro():
     await init_db()
+    from strata_api.models.collaboration import WorkspaceModel, WorkspaceMemberModel
+    from strata_api.routers import collaboration
     async with AsyncSessionLocal() as session:
         result_a = await session.execute(select(UserModel).where(UserModel.id == TEST_USER_A_ID))
         if not result_a.scalar_one_or_none():
@@ -60,7 +68,52 @@ async def _seed_users_coro():
                 is_verified=True,
             )
             session.add(user_b)
+
+        # Ensure default test workspace for user A
+        ws_id = "ws_test_default_a"
+        ws_res = await session.execute(select(WorkspaceModel).where(WorkspaceModel.id == ws_id))
+        if not ws_res.scalar_one_or_none():
+            ws = WorkspaceModel(
+                id=ws_id,
+                name="Test Default Workspace",
+                slug="test-default-workspace",
+                description="Test workspace for Test User A",
+                plan="Pro Team",
+                created_at="2026-09-01T00:00:00Z",
+                owner_id=TEST_USER_A_ID,
+            )
+            session.add(ws)
+            mem = WorkspaceMemberModel(
+                id="mem_test_a",
+                workspace_id=ws_id,
+                user_id=TEST_USER_A_ID,
+                name="Test User A",
+                email=TEST_USER_A_EMAIL,
+                role="Owner",
+                joined_at="2026-09-01T00:00:00Z",
+            )
+            session.add(mem)
+
         await session.commit()
+
+    collaboration._workspaces_db["ws_test_default_a"] = {
+        "id": "ws_test_default_a",
+        "name": "Test Default Workspace",
+        "slug": "test-default-workspace",
+        "description": "Test workspace for Test User A",
+        "plan": "Pro Team",
+        "created_at": "2026-09-01T00:00:00Z",
+        "owner_id": TEST_USER_A_ID,
+    }
+    collaboration._members_db.setdefault("ws_test_default_a", []).append({
+        "id": "mem_test_a",
+        "workspace_id": "ws_test_default_a",
+        "user_id": TEST_USER_A_ID,
+        "name": "Test User A",
+        "email": TEST_USER_A_EMAIL,
+        "role": "Owner",
+        "joined_at": "2026-09-01T00:00:00Z",
+    })
 
 
 def _sync_init_and_seed_users():

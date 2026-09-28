@@ -377,11 +377,22 @@ async def list_pipeline_runs(
     current_user: UserModel = Depends(get_current_user),
 ):
     """List execution history across pipelines (Pillar 7.6)."""
+    # Sync from database to pick up any runs completed by the worker process
+    from strata_api.core.persistence import SyncSessionLocal
+    from strata_api.models.persistence import PipelineRunModel
+    from sqlalchemy import select
+
+    with SyncSessionLocal() as session:
+        db_runs = session.scalars(select(PipelineRunModel)).all()
+        for r in db_runs:
+            _pipeline_runs[r.id] = r.to_dict()
+
     runs = list(_pipeline_runs.values())
     if pipeline_id:
-        runs = [r for r in runs if r["pipeline_id"] == pipeline_id]
-    runs.sort(key=lambda x: x["started_at"], reverse=True)
+        runs = [r for r in runs if r.get("pipeline_id") == pipeline_id]
+    runs.sort(key=lambda x: x.get("started_at", ""), reverse=True)
     return {"runs": runs, "total": len(runs)}
+
 
 
 @router.get("/dlq")

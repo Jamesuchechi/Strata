@@ -95,23 +95,45 @@ async def test_dataset_recommendations():
 
 
 @pytest.mark.asyncio
-async def test_showcase_gallery_and_filters():
-    """Test public showcase gallery listing, domain filter, and sorting (11.2, 11.6)."""
+async def test_showcase_publish_and_gallery():
+    """Test publishing real datasets to showcase and filtering (11.2, 11.6)."""
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test", headers=AUTH_HEADERS_A) as ac:
-        # Full list
+        # 1. Ingest a test dataset
+        csv_content = b"user_id,amount,region\nu1,100,US\nu2,200,EU\nu3,300,APAC"
+        ingest_resp = await ac.post(
+            "/api/preview",
+            files={"file": ("transactions.csv", csv_content, "text/csv")},
+        )
+        assert ingest_resp.status_code == 200
+        ds_id = ingest_resp.json()["view_name"]
+
+        # 2. Publish to showcase
+        pub_resp = await ac.post(
+            "/api/showcase/publish",
+            json={
+                "dataset_id": ds_id,
+                "domain": "Fintech & Security",
+                "license": "CC-BY-4.0",
+                "tags": ["finance", "benchmark"],
+                "description": "Real published transaction benchmark",
+            },
+        )
+        assert pub_resp.status_code == 200
+        showcase_id = pub_resp.json()["showcase_id"]
+
+        # 3. Full list
         resp = await ac.get("/api/showcase")
         assert resp.status_code == 200
         data = resp.json()
-        assert data["total"] >= 4
-        assert len(data["datasets"]) >= 4
+        assert data["total"] >= 1
+        assert any(d["id"] == showcase_id for d in data["datasets"])
 
-        # Domain filter
-        geo_resp = await ac.get("/api/showcase", params={"domain": "Geospatial"})
-        assert geo_resp.status_code == 200
-        geo_data = geo_resp.json()
-        assert geo_data["total"] >= 1
-        assert "climate" in geo_data["datasets"][0]["id"]
+        # 4. Domain filter
+        fin_resp = await ac.get("/api/showcase", params={"domain": "Fintech"})
+        assert fin_resp.status_code == 200
+        fin_data = fin_resp.json()
+        assert fin_data["total"] >= 1
 
 
 @pytest.mark.asyncio
@@ -119,7 +141,26 @@ async def test_showcase_star_download_and_citations():
     """Test starring, download tracking, and academic citations (11.4, 11.6)."""
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test", headers=AUTH_HEADERS_A) as ac:
-        dataset_id = "showcase_climate_risk"
+        # Ingest & publish
+        csv_content = b"sensor_id,temp,pressure\ns1,22.4,1013\ns2,23.1,1012"
+        ingest_resp = await ac.post(
+            "/api/preview",
+            files={"file": ("climate_sensors.csv", csv_content, "text/csv")},
+        )
+        assert ingest_resp.status_code == 200
+        ds_id = ingest_resp.json()["view_name"]
+
+        pub_resp = await ac.post(
+            "/api/showcase/publish",
+            json={
+                "dataset_id": ds_id,
+                "domain": "Geospatial & Climate",
+                "license": "CC-BY-4.0",
+                "tags": ["climate", "sensors"],
+            },
+        )
+        assert pub_resp.status_code == 200
+        dataset_id = pub_resp.json()["showcase_id"]
 
         # Star toggle
         star_resp = await ac.post(f"/api/showcase/{dataset_id}/star")
@@ -137,14 +178,13 @@ async def test_showcase_star_download_and_citations():
         cites = cite_resp.json()
         assert "@misc{" in cites["bibtex"]
         assert "10.5281/strata" in cites["doi"]
-        assert "Earth Dynamics Lab" in cites["apa"]
 
         # Embed snippet generator
         embed_resp = await ac.get(f"/api/showcase/{dataset_id}/embed-config")
         assert embed_resp.status_code == 200
         embeds = embed_resp.json()
         assert "<iframe" in embeds["iframe"]
-        assert "/embed/showcase_climate_risk" in embeds["embed_url"]
+        assert f"/embed/{dataset_id}" in embeds["embed_url"]
 
 
 @pytest.mark.asyncio
@@ -167,11 +207,27 @@ async def test_showcase_dataset_forking():
     """Test one-click public dataset forking into active user catalog (11.7)."""
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test", headers=AUTH_HEADERS_A) as ac:
-        dataset_id = "showcase_fintech_fraud"
+        # Ingest & publish
+        csv_content = b"colA,colB\n1,10\n2,20"
+        ingest_resp = await ac.post(
+            "/api/preview",
+            files={"file": ("fork_source.csv", csv_content, "text/csv")},
+        )
+        assert ingest_resp.status_code == 200
+        ds_id = ingest_resp.json()["view_name"]
+
+        pub_resp = await ac.post(
+            "/api/showcase/publish",
+            json={"dataset_id": ds_id, "domain": "General Science"},
+        )
+        assert pub_resp.status_code == 200
+        dataset_id = pub_resp.json()["showcase_id"]
+
         resp = await ac.post(f"/api/showcase/{dataset_id}/fork")
         assert resp.status_code == 200
         data = resp.json()
         assert data["status"] == "forked"
         assert "new_dataset_id" in data
         assert data["fork_count"] >= 1
-        assert "fintech" in data["dataset"]["tags"] or "forked" in data["dataset"]["tags"]
+
+

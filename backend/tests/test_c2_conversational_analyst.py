@@ -242,3 +242,55 @@ async def test_c2_security_rejection_of_hallucinated_admin_commands(sales_engine
     assert res["results"]["success"] is False
     assert "Validation Error" in res["results"]["error"]
     assert res["retries"] == 2
+
+
+@pytest.mark.asyncio
+async def test_c2_llm_json_array_response_handling(sales_engine, sample_schema):
+    """When LLM returns an array of objects e.g. [{"sql": "SELECT ...", "explanation": "..."}], analyst extracts valid SQL."""
+    mock_array_resp = """
+    [
+        {
+            "sql": "SELECT category, count(*) as count FROM ecom_orders GROUP BY category;",
+            "explanation": "Category counts"
+        }
+    ]
+    """
+    provider = MockLLMProvider([mock_array_resp])
+    executor = QueryExecutor(sales_engine)
+    analyst = ConversationalAnalyst(executor, provider)
+
+    res = await analyst.analyze(
+        view_name="ecom_orders",
+        question="Breakdown of orders per category",
+        schema=sample_schema,
+    )
+
+    assert res["results"]["success"] is True
+    assert res["results"]["row_count"] == 3
+    assert "SELECT category" in res["sql"]
+    assert res["retries"] == 0
+
+
+@pytest.mark.asyncio
+async def test_c2_llm_nested_list_sql_handling(sales_engine, sample_schema):
+    """When LLM returns sql field as a list or nested structure, analyst extracts the query string."""
+    mock_nested_resp = """
+    {
+        "sql": ["SELECT MAX(amount) as max_amount FROM ecom_orders;"],
+        "explanation": "Find max amount"
+    }
+    """
+    provider = MockLLMProvider([mock_nested_resp])
+    executor = QueryExecutor(sales_engine)
+    analyst = ConversationalAnalyst(executor, provider)
+
+    res = await analyst.analyze(
+        view_name="ecom_orders",
+        question="What was the largest order amount?",
+        schema=sample_schema,
+    )
+
+    assert res["results"]["success"] is True
+    assert res["results"]["data"][0]["max_amount"] == 1200.0
+    assert res["retries"] == 0
+

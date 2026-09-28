@@ -48,5 +48,9 @@ build-backend = "hatchling.build"
 packages = ["src/strata_api", "src/strata_sdk", "src/strata_cli"]
 
 [tool.pytest.ini_options]
-pythonpath = ["src"]
+pythonpath = ["src", "."]
 testpaths = ["tests"]
+
+[tool.pyright]
+extraPaths = [".", "src"]
+

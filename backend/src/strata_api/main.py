@@ -125,9 +125,32 @@ def _start_worker():
 
         arq strata_api.core.arq_worker.WorkerSettings
     """
-    import asyncio
+    import logging
+    import sys
     from arq import run_worker
     from strata_api.core.arq_worker import WorkerSettings
+
+    # Configure stdout logging so worker lifecycle and job events are visible
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        datefmt="%H:%M:%S",
+        stream=sys.stdout,
+        force=True,
+    )
+    logging.getLogger("arq").setLevel(logging.INFO)
+
+    print("=" * 65)
+    print(" 🚀 Strata Background Worker (ARQ)")
+    print("=" * 65)
+    print(f" 📦 Redis URL: {settings.REDIS_URL}")
+    print(" ⚙️  Registered Tasks:")
+    print("    - run_pipeline_task   (Data transformation pipelines)")
+    print("    - train_automl_task   (Asynchronous ML model training)")
+    print("    - run_eda_profile_task(Full statistical dataset profiling)")
+    print(" 🟢 Status: Worker active and listening for queued jobs...")
+    print("=" * 65, flush=True)
+
     run_worker(WorkerSettings)
 
 

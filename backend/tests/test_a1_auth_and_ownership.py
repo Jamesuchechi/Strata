@@ -285,6 +285,24 @@ async def test_200_user_a_accesses_own_resources(seeded_user_a_resources):
 @pytest.mark.asyncio
 async def test_public_endpoints_accessible_without_auth():
     transport = ASGITransport(app=app)
+    # First publish a dataset with User A
+    async with AsyncClient(transport=transport, base_url="http://test", headers=AUTH_HEADERS_A) as ac_auth:
+        csv_content = b"col1,col2\nv1,v2"
+        ingest_resp = await ac_auth.post(
+            "/api/preview",
+            files={"file": ("public_demo.csv", csv_content, "text/csv")},
+        )
+        assert ingest_resp.status_code == 200
+        ds_id = ingest_resp.json()["view_name"]
+        pub_resp = await ac_auth.post(
+            "/api/showcase/publish",
+            json={"dataset_id": ds_id, "domain": "General Science"},
+        )
+        assert pub_resp.status_code == 200
+        showcase_id = pub_resp.json()["showcase_id"]
+
+
+    # Now test public endpoints WITHOUT auth headers
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         # Public showcase catalog
         r_catalog = await ac.get("/api/showcase")
@@ -297,20 +315,21 @@ async def test_public_endpoints_accessible_without_auth():
         assert len(r_lic.json()["licenses"]) >= 5
 
         # Public showcase item detail
-        r_item = await ac.get("/api/showcase/showcase_climate_risk")
+        r_item = await ac.get(f"/api/showcase/{showcase_id}")
         assert r_item.status_code == 200
         assert "dataset" in r_item.json()
 
         # Public citation generation
-        r_cit = await ac.get("/api/showcase/showcase_climate_risk/citation")
+        r_cit = await ac.get(f"/api/showcase/{showcase_id}/citation")
         assert r_cit.status_code == 200
         assert "bibtex" in r_cit.json()
 
         # Public embed configuration
-        r_emb = await ac.get("/api/showcase/showcase_climate_risk/embed-config")
+        r_emb = await ac.get(f"/api/showcase/{showcase_id}/embed-config")
         assert r_emb.status_code == 200
         assert "iframe" in r_emb.json()
 
         # Public health check
         r_health = await ac.get("/api/health")
         assert r_health.status_code == 200
+

@@ -277,9 +277,9 @@ async def test_groq_intra_provider_model_fallback(monkeypatch):
     async def mock_post(self, url, headers=None, json=None):
         model = json["model"]
         attempted_models.append(model)
-        if model == "llama-3.3-70b-versatile":
+        if model == "openai/gpt-oss-120b":
             return httpx.Response(status_code=404, text="Model deprecated or not found", request=httpx.Request("POST", str(url)))
-        elif model == "llama-3.1-8b-instant":
+        elif model == "openai/gpt-oss-20b":
             return httpx.Response(
                 status_code=200,
                 json={"choices": [{"message": {"content": "SELECT 42;"}}]},
@@ -293,8 +293,8 @@ async def test_groq_intra_provider_model_fallback(monkeypatch):
     result = await provider.complete(system="sys", user="query")
 
     assert result == "SELECT 42;"
-    assert attempted_models == ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]
-    assert provider.last_used_model == "llama-3.1-8b-instant"
+    assert attempted_models == ["openai/gpt-oss-120b", "openai/gpt-oss-20b"]
+    assert provider.last_used_model == "openai/gpt-oss-20b"
 
 
 @pytest.mark.asyncio
@@ -305,9 +305,9 @@ async def test_mistral_intra_provider_model_fallback(monkeypatch):
     async def mock_post(self, url, headers=None, json=None):
         model = json["model"]
         attempted_models.append(model)
-        if model == "mistral-small-latest":
+        if model == "codestral-latest":
             return httpx.Response(status_code=429, text="Rate limit", request=httpx.Request("POST", str(url)))
-        elif model == "open-mistral-nemo":
+        elif model == "ministral-8b-latest":
             return httpx.Response(
                 status_code=200,
                 json={"choices": [{"message": {"content": "SELECT sum(val) FROM t;"}}]},
@@ -321,8 +321,8 @@ async def test_mistral_intra_provider_model_fallback(monkeypatch):
     result = await provider.complete(system="sys", user="query")
 
     assert result == "SELECT sum(val) FROM t;"
-    assert attempted_models == ["mistral-small-latest", "open-mistral-nemo"]
-    assert provider.last_used_model == "open-mistral-nemo"
+    assert attempted_models == ["codestral-latest", "ministral-8b-latest"]
+    assert provider.last_used_model == "ministral-8b-latest"
 
 
 @pytest.mark.asyncio
@@ -333,9 +333,9 @@ async def test_openrouter_intra_provider_model_fallback(monkeypatch):
     async def mock_post(self, url, headers=None, json=None):
         model = json["model"]
         attempted_models.append(model)
-        if model == "meta-llama/llama-3.3-70b-instruct:free":
+        if model == "liquid/lfm-2.5-2.6b:free":
             return httpx.Response(status_code=503, text="Overloaded", request=httpx.Request("POST", str(url)))
-        elif model == "mistralai/mistral-small-24b-instruct-2501:free":
+        elif model == "meta-llama/llama-3.3-70b-instruct:free":
             return httpx.Response(
                 status_code=200,
                 json={"choices": [{"message": {"content": "SELECT count(*) FROM users;"}}]},
@@ -349,6 +349,6 @@ async def test_openrouter_intra_provider_model_fallback(monkeypatch):
     result = await provider.complete(system="sys", user="query")
 
     assert result == "SELECT count(*) FROM users;"
-    assert attempted_models == ["meta-llama/llama-3.3-70b-instruct:free", "mistralai/mistral-small-24b-instruct-2501:free"]
-    assert provider.last_used_model == "mistralai/mistral-small-24b-instruct-2501:free"
+    assert attempted_models == ["liquid/lfm-2.5-2.6b:free", "meta-llama/llama-3.3-70b-instruct:free"]
+    assert provider.last_used_model == "meta-llama/llama-3.3-70b-instruct:free"
 

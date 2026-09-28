@@ -46,12 +46,12 @@ logger = logging.getLogger(__name__)
 
 async def on_startup(ctx: Dict[str, Any]) -> None:
     """Initialise any per-worker state (DB sessions, caches, etc.)."""
-    logger.info("ARQ worker starting up.")
+    logger.info("ARQ worker connected to Redis. Ready to process background jobs.")
 
 
 async def on_shutdown(ctx: Dict[str, Any]) -> None:
     """Clean up per-worker resources."""
-    logger.info("ARQ worker shutting down.")
+    logger.info("ARQ worker shutting down gracefully.")
 
 
 # ---------------------------------------------------------------------------

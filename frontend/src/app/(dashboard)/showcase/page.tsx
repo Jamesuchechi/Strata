@@ -28,6 +28,8 @@ import {
   X,
   ShieldCheck,
   ArrowRight,
+  Plus,
+  Upload,
 } from "lucide-react";
 import {
   fetchShowcaseDatasets,
@@ -35,8 +37,11 @@ import {
   toggleShowcaseStar,
   trackShowcaseDownload,
   forkShowcaseDataset,
+  fetchDatasets,
+  publishToShowcase,
+  fetchLicensesCatalog,
 } from "@/lib/api";
-import { ShowcaseDataset, CitationResponse, EmbedConfigResponse } from "@/lib/types";
+import { ShowcaseDataset, CitationResponse, EmbedConfigResponse, DatasetItem, LicenseItem } from "@/lib/types";
 
 export default function ShowcasePage() {
   const router = useRouter();
@@ -46,6 +51,17 @@ export default function ShowcasePage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState<string>("trending");
   const [isLoading, setIsLoading] = useState(true);
+
+  // Publish modal state
+  const [isPublishOpen, setIsPublishOpen] = useState(false);
+  const [userDatasets, setUserDatasets] = useState<DatasetItem[]>([]);
+  const [publishDatasetId, setPublishDatasetId] = useState("");
+  const [publishDomain, setPublishDomain] = useState("General Science");
+  const [publishLicense, setPublishLicense] = useState("CC-BY-4.0");
+  const [publishTags, setPublishTags] = useState("");
+  const [publishDescription, setPublishDescription] = useState("");
+  const [isPublishing, setIsPublishing] = useState(false);
+  const [publishError, setPublishError] = useState<string | null>(null);
 
   // Modal inspection state
   const [activeModalId, setActiveModalId] = useState<string | null>(null);
@@ -88,6 +104,53 @@ export default function ShowcasePage() {
     return () => clearTimeout(timer);
   }, [selectedDomain, searchQuery, sortBy]);
 
+  const handleOpenPublishModal = async () => {
+    setPublishError(null);
+    setIsPublishOpen(true);
+    try {
+      const list = await fetchDatasets();
+      setUserDatasets(list || []);
+      if (list && list.length > 0 && !publishDatasetId) {
+        setPublishDatasetId(list[0].id);
+      }
+    } catch (err) {
+      console.error("Failed to fetch workspace datasets:", err);
+    }
+  };
+
+  const handlePublishSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!publishDatasetId) {
+      setPublishError("Please select a workspace dataset to publish.");
+      return;
+    }
+    setIsPublishing(true);
+    setPublishError(null);
+    try {
+      const tagsArray = publishTags
+        .split(",")
+        .map((t) => t.trim().toLowerCase())
+        .filter((t) => t.length > 0);
+
+      await publishToShowcase({
+        dataset_id: publishDatasetId,
+        domain: publishDomain,
+        license: publishLicense,
+        tags: tagsArray,
+        description: publishDescription || undefined,
+      });
+
+      setIsPublishOpen(false);
+      setPublishTags("");
+      setPublishDescription("");
+      loadShowcase();
+    } catch (err: any) {
+      setPublishError(err.message || "Failed to publish dataset to showcase.");
+    } finally {
+      setIsPublishing(false);
+    }
+  };
+
   const handleOpenDossier = async (datasetId: string) => {
     setActiveModalId(datasetId);
     setIsDossierLoading(true);
@@ -128,7 +191,7 @@ export default function ShowcasePage() {
       setDatasets((prev) =>
         prev.map((d) => (d.id === datasetId ? { ...d, downloads: d.downloads + 1 } : d))
       );
-      alert("Download tracked! The dataset snapshot is ready.");
+      alert("Download recorded! Dataset snapshot is ready.");
     } catch (err) {
       console.error("Download tracking failed:", err);
     }
@@ -163,20 +226,27 @@ export default function ShowcasePage() {
     switch (format.toLowerCase()) {
       case "parquet":
         return (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-blue-50 text-[#0061FE] border border-blue-200">
             <Database className="w-3 h-3" /> Parquet
           </span>
         );
       case "sdf":
         return (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-purple-50 text-purple-700 border border-purple-200">
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-purple-50 text-purple-700 border border-purple-200">
             <Atom className="w-3 h-3" /> SDF Mol
+          </span>
+        );
+      case "xlsx":
+      case "excel":
+        return (
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+            <FileSpreadsheet className="w-3 h-3" /> Excel
           </span>
         );
       default:
         return (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-            <FileText className="w-3 h-3" /> CSV
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-blue-50 text-blue-800 border border-blue-200">
+            <FileText className="w-3 h-3" /> {format.toUpperCase()}
           </span>
         );
     }
@@ -189,46 +259,59 @@ export default function ShowcasePage() {
 
   return (
     <div className="p-8 max-w-7xl mx-auto space-y-8 animate-in fade-in duration-200">
-      {/* Header Banner */}
-      <div className="bg-gradient-to-r from-[#1E1915] via-[#2A2420] to-[#1E1915] rounded-2xl p-8 text-white shadow-lg relative overflow-hidden">
-        <div className="absolute right-0 top-0 w-96 h-96 bg-[#0061FE]/15 rounded-full blur-3xl pointer-events-none -mr-20 -mt-20" />
-        <div className="relative z-10 max-w-3xl space-y-4">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 text-xs font-semibold tracking-wide uppercase text-white/90 border border-white/15 backdrop-blur-sm">
-            <Globe className="w-3.5 h-3.5 text-[#0061FE]" />
-            Strata Open Data Hub & Public Showcase
+      {/* Royal Blue & White Header Banner */}
+      <div className="bg-gradient-to-r from-[#0061FE] via-[#0052D9] to-[#0042B3] rounded-2xl p-8 text-white shadow-xl relative overflow-hidden">
+        <div className="absolute right-0 top-0 w-96 h-96 bg-white/10 rounded-full blur-3xl pointer-events-none -mr-20 -mt-20" />
+        <div className="relative z-10 space-y-6">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div className="space-y-3 max-w-3xl">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/15 text-xs font-semibold tracking-wide uppercase text-white border border-white/20 backdrop-blur-sm">
+                <Globe className="w-3.5 h-3.5 text-white" />
+                Strata Open Data Hub & Public Showcase
+              </div>
+              <h1 className="text-3xl font-extrabold tracking-tight text-white sm:text-4xl">
+                Discover, Fork, and Embed Curated Open Datasets
+              </h1>
+              <p className="text-blue-100 text-sm sm:text-base leading-relaxed">
+                Verified open datasets published by workspace researchers and the Strata community. Live previews,
+                1-click forking into your workspace, and automatic academic citations.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <button
+                onClick={handleOpenPublishModal}
+                className="px-4 py-2.5 bg-white text-[#0061FE] hover:bg-blue-50 font-bold text-xs sm:text-sm rounded-xl shadow-md flex items-center gap-2 transition-all hover:scale-[1.02] active:scale-[0.98]"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Publish Dataset to Hub</span>
+              </button>
+            </div>
           </div>
-          <h1 className="text-3xl font-extrabold tracking-tight text-white sm:text-4xl">
-            Discover, Fork, and Embed Curated Open Datasets
-          </h1>
-          <p className="text-[#E8E4DF] text-sm sm:text-base leading-relaxed">
-            High-integrity benchmark datasets for geospatial science, fintech fraud detection, drug
-            bioactivity, and customer cohorts. Live previews, 1-click forking into your workspace, and
-            academic citations.
-          </p>
 
           {/* Quick Metrics */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-4 border-t border-white/10 text-xs">
-            <div>
-              <p className="text-white/60">Curated Benchmarks</p>
-              <p className="text-lg font-bold text-white">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-4 border-t border-white/15 text-xs">
+            <div className="bg-white/10 border border-white/15 backdrop-blur-sm rounded-xl p-3.5">
+              <p className="text-blue-100 text-[11px]">Curated Domains</p>
+              <p className="text-xl font-bold text-white mt-0.5">
                 {isLoading ? "..." : `${domainCount} Domain${domainCount === 1 ? "" : "s"}`}
               </p>
             </div>
-            <div>
-              <p className="text-white/60">Community Stars</p>
-              <p className="text-lg font-bold text-amber-400">
+            <div className="bg-white/10 border border-white/15 backdrop-blur-sm rounded-xl p-3.5">
+              <p className="text-blue-100 text-[11px]">Community Stars</p>
+              <p className="text-xl font-bold text-amber-300 mt-0.5">
                 {isLoading ? "..." : `${totalStars.toLocaleString()} ★`}
               </p>
             </div>
-            <div>
-              <p className="text-white/60">Verified Records</p>
-              <p className="text-lg font-bold text-emerald-400">
+            <div className="bg-white/10 border border-white/15 backdrop-blur-sm rounded-xl p-3.5">
+              <p className="text-blue-100 text-[11px]">Verified Records</p>
+              <p className="text-xl font-bold text-emerald-300 mt-0.5">
                 {isLoading ? "..." : totalRows.toLocaleString()}
               </p>
             </div>
-            <div>
-              <p className="text-white/60">Community Downloads</p>
-              <p className="text-lg font-bold text-[#60A5FA]">
+            <div className="bg-white/10 border border-white/15 backdrop-blur-sm rounded-xl p-3.5">
+              <p className="text-blue-100 text-[11px]">Community Downloads</p>
+              <p className="text-xl font-bold text-blue-200 mt-0.5">
                 {isLoading ? "..." : totalDownloads.toLocaleString()}
               </p>
             </div>
@@ -252,7 +335,7 @@ export default function ShowcasePage() {
       )}
 
       {/* Control Bar: Filters & Search */}
-      <div className="bg-[#FAF8F5] border border-[#E8E4DF] rounded-xl p-4 shadow-sm space-y-4">
+      <div className="bg-white border border-[#E8E4DF] rounded-xl p-4 shadow-sm space-y-4">
         <div className="flex flex-col md:flex-row gap-3 items-center justify-between">
           {/* Domain Filter Pills */}
           <div className="flex flex-wrap items-center gap-1.5 w-full md:w-auto">
@@ -260,10 +343,10 @@ export default function ShowcasePage() {
               <button
                 key={dom}
                 onClick={() => setSelectedDomain(dom)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
                   selectedDomain === dom
-                    ? "bg-[#1E1915] text-white shadow-sm"
-                    : "bg-white text-[#6F675F] hover:bg-[#E8E4DF]/50 border border-[#E8E4DF]"
+                    ? "bg-[#0061FE] text-white shadow-sm"
+                    : "bg-[#FAF8F5] text-[#6F675F] hover:bg-blue-50 hover:text-[#0061FE] border border-[#E8E4DF]"
                 }`}
               >
                 {dom}
@@ -299,19 +382,33 @@ export default function ShowcasePage() {
         </div>
       </div>
 
-      {/* Dataset Grid */}
+      {/* Dataset Grid / Empty State */}
       {isLoading ? (
         <div className="py-20 text-center space-y-3">
           <div className="w-8 h-8 border-2 border-[#0061FE] border-t-transparent rounded-full animate-spin mx-auto" />
-          <p className="text-xs text-[#8C827A] font-medium">Loading curated showcase datasets...</p>
+          <p className="text-xs text-[#8C827A] font-medium">Loading published showcase datasets...</p>
         </div>
       ) : datasets.length === 0 ? (
-        <div className="p-12 text-center bg-white border border-[#E8E4DF] rounded-2xl space-y-3">
-          <Globe className="w-10 h-10 text-[#8C827A] mx-auto opacity-50" />
-          <h3 className="text-sm font-bold text-[#1E1915]">No datasets matched your query</h3>
-          <p className="text-xs text-[#8C827A]">
-            Try adjusting your search keywords or switching domain filters.
-          </p>
+        <div className="p-12 text-center bg-white border border-[#E8E4DF] rounded-2xl shadow-sm space-y-4">
+          <div className="w-16 h-16 rounded-2xl bg-blue-50 border border-blue-100 flex items-center justify-center mx-auto text-[#0061FE]">
+            <Globe className="w-8 h-8 text-[#0061FE]" />
+          </div>
+          <div className="max-w-md mx-auto space-y-2">
+            <h3 className="text-lg font-bold text-[#1E1915]">No Public Datasets Published Yet</h3>
+            <p className="text-xs text-[#6F675F] leading-relaxed">
+              Only authentic datasets published by users appear in the public showcase. Publish any dataset from your
+              workspace to share it, generate responsive embed widgets, and create academic citations.
+            </p>
+          </div>
+          <div className="pt-2">
+            <button
+              onClick={handleOpenPublishModal}
+              className="px-5 py-2.5 bg-[#0061FE] hover:bg-[#0052D9] text-white text-xs font-bold rounded-xl shadow-sm inline-flex items-center gap-2 transition-all hover:scale-[1.02]"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Publish Your First Dataset</span>
+            </button>
+          </div>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -324,7 +421,7 @@ export default function ShowcasePage() {
                 {/* Badges Bar */}
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
-                    <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold tracking-wide uppercase bg-[#F7F5F2] text-[#4A423B] border border-[#E8E4DF]">
+                    <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold tracking-wide uppercase bg-blue-50 text-[#0061FE] border border-blue-200">
                       {item.domain}
                     </span>
                     {getFormatBadge(item.format)}
@@ -361,12 +458,12 @@ export default function ShowcasePage() {
 
                 {/* Author Info */}
                 <div className="flex items-center gap-2 pt-1 text-xs text-[#6F675F]">
-                  <div className="w-5 h-5 rounded-full bg-[#E8E4DF] flex items-center justify-center font-bold text-[10px] text-[#4A423B]">
-                    {item.author[0]}
+                  <div className="w-5 h-5 rounded-full bg-blue-100 flex items-center justify-center font-bold text-[10px] text-[#0061FE]">
+                    {item.author ? item.author[0].toUpperCase() : "S"}
                   </div>
                   <span className="font-medium text-[#1E1915]">{item.author}</span>
                   {item.author_verified && (
-                    <span title="Verified Contributor" className="text-blue-600">
+                    <span title="Verified Contributor" className="text-[#0061FE]">
                       <CheckCircle2 className="w-3.5 h-3.5" />
                     </span>
                   )}
@@ -379,7 +476,7 @@ export default function ShowcasePage() {
                   {item.tags.slice(0, 4).map((t) => (
                     <span
                       key={t}
-                      className="px-2 py-0.5 rounded text-[10px] font-medium bg-[#F7F5F2] text-[#6F675F] border border-[#E8E4DF]/60"
+                      className="px-2 py-0.5 rounded text-[10px] font-medium bg-[#FAF8F5] text-[#6F675F] border border-[#E8E4DF]"
                     >
                       #{t}
                     </span>
@@ -413,7 +510,7 @@ export default function ShowcasePage() {
                   <button
                     onClick={(e) => handleFork(e, item.id)}
                     disabled={forkingId === item.id}
-                    className="px-3 py-1.5 bg-[#0061FE] hover:bg-[#0052D4] text-white text-xs font-semibold rounded-lg flex items-center gap-1.5 shadow-sm transition-colors disabled:opacity-50"
+                    className="px-3 py-1.5 bg-[#0061FE] hover:bg-[#0052D9] text-white text-xs font-semibold rounded-lg flex items-center gap-1.5 shadow-sm transition-colors disabled:opacity-50"
                   >
                     <GitFork className="w-3.5 h-3.5" />
                     <span>{forkingId === item.id ? "Forking..." : `Fork (${item.forks})`}</span>
@@ -425,6 +522,142 @@ export default function ShowcasePage() {
         </div>
       )}
 
+      {/* Publish Dataset to Showcase Modal */}
+      {isPublishOpen && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl border border-[#E8E4DF] w-full max-w-lg flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="p-6 border-b border-[#E8E4DF] bg-gradient-to-r from-[#0061FE] to-[#0052D9] text-white flex items-center justify-between">
+              <div className="space-y-0.5">
+                <div className="flex items-center gap-2">
+                  <Globe className="w-4 h-4 text-white" />
+                  <span className="text-xs font-semibold uppercase tracking-wider text-blue-100">
+                    Strata Open Data Hub
+                  </span>
+                </div>
+                <h2 className="text-lg font-bold text-white">Publish Dataset to Public Showcase</h2>
+              </div>
+              <button
+                onClick={() => setIsPublishOpen(false)}
+                className="p-1.5 rounded-lg text-white/80 hover:bg-white/10 hover:text-white transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handlePublishSubmit} className="p-6 space-y-4">
+              {publishError && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-xs font-medium">
+                  {publishError}
+                </div>
+              )}
+
+              {userDatasets.length === 0 ? (
+                <div className="text-center py-6 space-y-3">
+                  <p className="text-xs text-[#6F675F]">
+                    You have no datasets in your workspace yet. Upload or ingest a dataset first.
+                  </p>
+                  <Link
+                    href="/datasets"
+                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#0061FE] text-white text-xs font-semibold rounded-lg"
+                  >
+                    Go to Datasets →
+                  </Link>
+                </div>
+              ) : (
+                <>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-[#1E1915]">Select Workspace Dataset</label>
+                    <select
+                      value={publishDatasetId}
+                      onChange={(e) => setPublishDatasetId(e.target.value)}
+                      className="w-full p-2.5 text-xs bg-white border border-[#E8E4DF] rounded-lg text-[#1E1915] font-medium focus:outline-none focus:border-[#0061FE]"
+                    >
+                      {userDatasets.map((d) => (
+                        <option key={d.id} value={d.id}>
+                          {d.name || d.filename} ({d.format?.toUpperCase()}, {d.total_rows.toLocaleString()} rows)
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-[#1E1915]">Domain Category</label>
+                      <select
+                        value={publishDomain}
+                        onChange={(e) => setPublishDomain(e.target.value)}
+                        className="w-full p-2 text-xs bg-white border border-[#E8E4DF] rounded-lg text-[#1E1915] focus:outline-none focus:border-[#0061FE]"
+                      >
+                        <option value="General Science">General Science</option>
+                        <option value="Healthcare & Public Health">Healthcare & Public Health</option>
+                        <option value="Fintech & Security">Fintech & Security</option>
+                        <option value="Geospatial & Climate">Geospatial & Climate</option>
+                        <option value="E-Commerce & Retail">E-Commerce & Retail</option>
+                        <option value="Biomedical & Chemistry">Biomedical & Chemistry</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-[#1E1915]">Open License</label>
+                      <select
+                        value={publishLicense}
+                        onChange={(e) => setPublishLicense(e.target.value)}
+                        className="w-full p-2 text-xs bg-white border border-[#E8E4DF] rounded-lg text-[#1E1915] focus:outline-none focus:border-[#0061FE]"
+                      >
+                        <option value="CC-BY-4.0">CC-BY-4.0 (Creative Commons)</option>
+                        <option value="MIT">MIT License</option>
+                        <option value="Apache-2.0">Apache 2.0</option>
+                        <option value="CC0-1.0">CC0-1.0 (Public Domain)</option>
+                        <option value="ODC-ODbL">ODC-ODbL (Open Database)</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-[#1E1915]">Tags (Comma separated)</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. covid, health, timeseries, public-data"
+                      value={publishTags}
+                      onChange={(e) => setPublishTags(e.target.value)}
+                      className="w-full p-2.5 text-xs bg-white border border-[#E8E4DF] rounded-lg focus:outline-none focus:border-[#0061FE]"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-[#1E1915]">Description / Abstract</label>
+                    <textarea
+                      rows={3}
+                      placeholder="Explain the background, methodology, and contents of this dataset..."
+                      value={publishDescription}
+                      onChange={(e) => setPublishDescription(e.target.value)}
+                      className="w-full p-2.5 text-xs bg-white border border-[#E8E4DF] rounded-lg focus:outline-none focus:border-[#0061FE]"
+                    />
+                  </div>
+
+                  <div className="pt-3 border-t border-[#E8E4DF] flex items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsPublishOpen(false)}
+                      className="px-4 py-2 bg-white border border-[#E8E4DF] text-xs font-semibold text-[#6F675F] hover:text-[#1E1915] rounded-lg"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isPublishing}
+                      className="px-4 py-2 bg-[#0061FE] hover:bg-[#0052D9] text-white text-xs font-bold rounded-lg shadow-sm transition-all disabled:opacity-50"
+                    >
+                      {isPublishing ? "Publishing..." : "Publish to Showcase"}
+                    </button>
+                  </div>
+                </>
+              )}
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Dossier & Preview Modal */}
       {activeModalId && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
@@ -433,7 +666,7 @@ export default function ShowcasePage() {
             <div className="p-6 border-b border-[#E8E4DF] bg-[#FAF8F5] flex items-center justify-between">
               <div className="space-y-1">
                 <div className="flex items-center gap-2">
-                  <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-[#E8E4DF] text-[#4A423B]">
+                  <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-blue-50 text-[#0061FE] border border-blue-200">
                     {activeDossier?.dataset.domain || "Dataset"}
                   </span>
                   <span className="text-xs text-[#8C827A]">•</span>
@@ -528,7 +761,7 @@ export default function ShowcasePage() {
                           onClick={() => handleDownload(activeDossier.dataset.id)}
                           className="inline-flex items-center gap-1.5 font-bold text-[#0061FE] hover:underline"
                         >
-                          <Download className="w-3.5 h-3.5" /> Download Full Snapshot (
+                          <Download className="w-3.5 h-3.5" /> Download Snapshot (
                           {(activeDossier.dataset.size_bytes / (1024 * 1024)).toFixed(1)} MB)
                         </button>
                       </div>
@@ -595,7 +828,7 @@ export default function ShowcasePage() {
                               <tr key={f.name} className="hover:bg-slate-50">
                                 <td className="p-3 font-mono font-bold text-[#1E1915]">{f.name}</td>
                                 <td className="p-3">
-                                  <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-blue-50 text-blue-700 border border-blue-200">
+                                  <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-blue-50 text-[#0061FE] border border-blue-200">
                                     {f.type}
                                   </span>
                                 </td>
@@ -645,10 +878,10 @@ export default function ShowcasePage() {
                     <div className="space-y-6">
                       <div className="p-4 bg-blue-50 border border-blue-200 rounded-xl space-y-1">
                         <div className="flex items-center gap-2 font-bold text-xs text-blue-900">
-                          <BookOpen className="w-4 h-4 text-blue-700" />
+                          <BookOpen className="w-4 h-4 text-[#0061FE]" />
                           <span>Persistent Academic Identifier (DOI)</span>
                         </div>
-                        <p className="text-xs text-blue-700 font-mono">
+                        <p className="text-xs text-[#0061FE] font-mono">
                           doi:{activeDossier.citations.doi}
                         </p>
                       </div>
@@ -790,7 +1023,7 @@ export default function ShowcasePage() {
                   <button
                     onClick={(e) => handleFork(e, activeDossier.dataset.id)}
                     disabled={forkingId === activeDossier.dataset.id}
-                    className="px-4 py-2 bg-[#0061FE] hover:bg-[#0052D4] text-white text-xs font-semibold rounded-lg flex items-center gap-1.5 shadow-sm transition-colors"
+                    className="px-4 py-2 bg-[#0061FE] hover:bg-[#0052D9] text-white text-xs font-semibold rounded-lg flex items-center gap-1.5 shadow-sm transition-colors"
                   >
                     <GitFork className="w-4 h-4" />
                     <span>Fork Dataset into Studio</span>
