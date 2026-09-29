@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 from strata_api.models.user import UserModel
 from strata_api.routers.auth import get_current_user
 from strata_api.routers.datasets import _datasets_db, seed_default_datasets_if_needed, check_dataset_access
+from strata_api.core.arq_pool import get_arq_pool
 
 router = APIRouter(prefix="/security", tags=["Security, Compliance & Admin Ops"])
 
@@ -135,9 +136,11 @@ async def get_audit_logs(
     """Immutable audit trail with cryptographic SHA256 chain verification (Pillar 16.3)."""
     logs = list(_audit_trail)
     if actor:
-        logs = [l for l in logs if actor.lower() in l["actor"].lower()]
+        actor_clean = str(actor).lower()
+        logs = [l for l in logs if actor_clean in str(l.get("actor") or "").lower()]
     if action:
-        logs = [l for l in logs if action.lower() in l["action"].lower()]
+        action_clean = str(action).lower()
+        logs = [l for l in logs if action_clean in str(l.get("action") or "").lower()]
 
     # Verify blockchain-style hash chain integrity
     is_valid = True
@@ -272,7 +275,7 @@ async def get_admin_overview(current_user: UserModel = Depends(get_current_user)
     total_storage = sum(d.get("size_bytes", 0) for d in datasets)
 
     from strata_api.core.persistence import SyncSessionLocal
-    from strata_api.models.persistence import UserModel as DbUserModel, WorkspaceModel
+    from strata_api.models import UserModel as DbUserModel, WorkspaceModel
     from sqlalchemy import select, func
 
     with SyncSessionLocal() as session:
@@ -334,7 +337,7 @@ async def get_platform_health_metrics(current_user: UserModel = Depends(get_curr
     try:
         from strata_api.core.duckdb_engine import get_duckdb_engine
         t0 = time.perf_counter()
-        get_duckdb_engine().execute_query("SELECT 1 AS health_check;")
+        get_duckdb_engine().query("SELECT 1 AS health_check;")
         duckdb_latency = round((time.perf_counter() - t0) * 1000, 2)
     except Exception:
         pass

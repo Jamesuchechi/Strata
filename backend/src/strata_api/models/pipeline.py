@@ -1,6 +1,8 @@
 """SQLAlchemy ORM models for scheduled pipelines, execution history, and dead letter queue."""
 
-from sqlalchemy import Boolean, Column, Float, Integer, String, Text, JSON
+from typing import Any, Optional
+from sqlalchemy import Boolean, Float, Integer, String, Text, JSON
+from sqlalchemy.orm import Mapped, mapped_column
 from strata_api.core.database import Base
 
 
@@ -8,20 +10,20 @@ class PipelineModel(Base):
     """Pipeline definition."""
     __tablename__ = "pipelines"
 
-    id = Column(String(64), primary_key=True)
-    owner_id = Column(String(64), nullable=True, index=True)
-    name = Column(String(128), nullable=False)
-    description = Column(Text, nullable=True)
-    target_dataset_id = Column(String(64), nullable=False, index=True)
-    steps = Column(JSON, default=list, nullable=False)
-    schedule = Column(String(64), default="0 2 * * *", nullable=False)
-    trigger = Column(String(32), default="cron", nullable=False)
-    is_active = Column(Boolean, default=True, nullable=False)
-    timeout_seconds = Column(Integer, default=60, nullable=False)
-    max_memory_mb = Column(Integer, default=512, nullable=False)
-    created_at = Column(String(64), nullable=False)
-    last_run_at = Column(String(64), nullable=True)
-    last_status = Column(String(32), default="never_run", nullable=False)
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    owner_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    target_dataset_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    steps: Mapped[Any] = mapped_column(JSON, default=list, nullable=False)
+    schedule: Mapped[str] = mapped_column(String(64), default="0 2 * * *", nullable=False)
+    trigger: Mapped[str] = mapped_column(String(32), default="cron", nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    timeout_seconds: Mapped[int] = mapped_column(Integer, default=60, nullable=False)
+    max_memory_mb: Mapped[int] = mapped_column(Integer, default=512, nullable=False)
+    created_at: Mapped[str] = mapped_column(String(64), nullable=False)
+    last_run_at: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    last_status: Mapped[str] = mapped_column(String(32), default="never_run", nullable=False)
 
     def to_dict(self):
         return {
@@ -46,16 +48,16 @@ class PipelineRunModel(Base):
     """Pipeline execution history log."""
     __tablename__ = "pipeline_runs"
 
-    id = Column(String(64), primary_key=True)
-    pipeline_id = Column(String(64), nullable=False, index=True)
-    status = Column(String(32), default="running", nullable=False)
-    started_at = Column(String(64), nullable=False)
-    completed_at = Column(String(64), nullable=True)
-    duration_seconds = Column(Float, default=0.0, nullable=False)
-    rows_processed = Column(Integer, default=0, nullable=False)
-    logs = Column(JSON, default=list, nullable=False)
-    error = Column(Text, nullable=True)
-    triggered_by = Column(String(128), default="manual", nullable=False)
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    pipeline_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(32), default="running", nullable=False)
+    started_at: Mapped[str] = mapped_column(String(64), nullable=False)
+    completed_at: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    duration_seconds: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    rows_processed: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    logs: Mapped[Any] = mapped_column(JSON, default=list, nullable=False)
+    error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    triggered_by: Mapped[str] = mapped_column(String(128), default="manual", nullable=False)
 
     def to_dict(self):
         return {
@@ -76,16 +78,16 @@ class DeadLetterJobModel(Base):
     """Failed pipeline execution job stored for diagnostic and retry."""
     __tablename__ = "dead_letter_jobs"
 
-    id = Column(String(64), primary_key=True)
-    job_id = Column(String(64), nullable=False, index=True)
-    pipeline_id = Column(String(64), nullable=False, index=True)
-    failed_at = Column(String(64), nullable=False)
-    error_type = Column(String(128), nullable=False)
-    error_message = Column(Text, nullable=False)
-    retry_count = Column(Integer, default=0, nullable=False)
-    max_retries = Column(Integer, default=3, nullable=False)
-    payload = Column(JSON, default=dict, nullable=False)
-    status = Column(String(32), default="quarantined", nullable=False)
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    job_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    pipeline_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    failed_at: Mapped[str] = mapped_column(String(64), nullable=False)
+    error_type: Mapped[str] = mapped_column(String(128), nullable=False)
+    error_message: Mapped[str] = mapped_column(Text, nullable=False)
+    retry_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    max_retries: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
+    payload: Mapped[Any] = mapped_column(JSON, default=dict, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="quarantined", nullable=False)
 
     def to_dict(self):
         return {

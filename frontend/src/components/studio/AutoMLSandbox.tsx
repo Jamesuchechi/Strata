@@ -12,6 +12,9 @@ import {
   Sliders,
   Sparkles,
   ShieldAlert,
+  Layers,
+  HelpCircle,
+  Flame,
 } from "lucide-react";
 import { trainAutoMLModel } from "@/lib/api";
 import { PreviewData } from "@/lib/types";
@@ -26,6 +29,7 @@ export function AutoMLSandbox({ datasetId, previewData }: AutoMLSandboxProps) {
     previewData.schema_fields[previewData.schema_fields.length - 1]?.name || ""
   );
   const [taskType, setTaskType] = useState<"auto" | "classification" | "regression">("auto");
+  const [modelFamily, setModelFamily] = useState<"random_forest" | "lightgbm" | "xgboost">("lightgbm");
   const [isTraining, setIsTraining] = useState(false);
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
@@ -39,6 +43,7 @@ export function AutoMLSandbox({ datasetId, previewData }: AutoMLSandboxProps) {
         dataset_id: datasetId,
         target_column: targetCol,
         task_type: taskType,
+        model_family: modelFamily,
       });
       setResult(data);
     } catch (err: any) {
@@ -49,6 +54,9 @@ export function AutoMLSandbox({ datasetId, previewData }: AutoMLSandboxProps) {
   };
 
   const diag = result?.diagnostics;
+  const shapData = result?.shap;
+  const waterfall = shapData?.waterfall;
+  const summaryPlot = shapData?.summary;
 
   return (
     <div className="flex-1 flex flex-col h-full overflow-auto bg-[#F7F5F2] p-6 space-y-6">
@@ -59,18 +67,18 @@ export function AutoMLSandbox({ datasetId, previewData }: AutoMLSandboxProps) {
             <BrainCircuit className="w-5 h-5 text-[#0061FE]" />
             <h2 className="text-base font-bold text-[#1E1915]">AutoML Sandbox & Predictive Diagnostics</h2>
             <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-blue-50 border border-blue-200 text-[#0061FE] font-bold">
-              Baseline Engine
+              Tree ML + SHAP
             </span>
           </div>
           <p className="text-xs text-[#736B63] mt-0.5">
-            Train baseline predictive models in &lt;5 seconds with automated feature encoding, ROC-AUC, confusion matrix, and feature importances.
+            Train LightGBM, XGBoost, or Random Forest models with real SHAP explanations, automated encoding, and leakage auditing.
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center flex-wrap gap-3">
           <div>
             <label className="text-[10px] font-mono text-[#8C827A] uppercase font-bold block mb-1">
-              Target Variable (Y)
+              Target (Y)
             </label>
             <select
               value={targetCol}
@@ -100,6 +108,21 @@ export function AutoMLSandbox({ datasetId, previewData }: AutoMLSandboxProps) {
             </select>
           </div>
 
+          <div>
+            <label className="text-[10px] font-mono text-[#8C827A] uppercase font-bold block mb-1">
+              Algorithm
+            </label>
+            <select
+              value={modelFamily}
+              onChange={(e) => setModelFamily(e.target.value as any)}
+              className="px-3 py-1.5 rounded-xl border border-[#E8E4DF] bg-[#FAF8F5] text-xs font-semibold text-[#1E1915] outline-none"
+            >
+              <option value="lightgbm">LightGBM (Fast & High Accuracy)</option>
+              <option value="xgboost">XGBoost (Robust Gradient Boost)</option>
+              <option value="random_forest">Random Forest (Ensemble)</option>
+            </select>
+          </div>
+
           <div className="self-end">
             <button
               onClick={handleTrain}
@@ -109,7 +132,7 @@ export function AutoMLSandbox({ datasetId, previewData }: AutoMLSandboxProps) {
               {isTraining ? (
                 <>
                   <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  <span>Training Baseline...</span>
+                  <span>Training {modelFamily.toUpperCase()}...</span>
                 </>
               ) : (
                 <>
@@ -144,6 +167,21 @@ export function AutoMLSandbox({ datasetId, previewData }: AutoMLSandboxProps) {
       {/* Main Results Viewport */}
       {result && diag && (
         <div className="space-y-6 animate-in fade-in">
+          {/* Header Info */}
+          <div className="flex items-center justify-between px-1">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-mono font-bold text-[#1E1915]">
+                {result.model_name || "Trained Model"}
+              </span>
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 font-bold uppercase">
+                {result.task_type}
+              </span>
+              <span className="text-[10px] font-mono text-[#736B63]">
+                {result.train_samples} train / {result.test_samples} test samples • {result.features_count} features
+              </span>
+            </div>
+          </div>
+
           {/* Diagnostic Metric Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {diag.task === "classification" ? (
@@ -316,18 +354,24 @@ export function AutoMLSandbox({ datasetId, previewData }: AutoMLSandboxProps) {
               )}
             </div>
 
-            {/* Right: Feature Importance Rankings */}
+            {/* Right: Feature Importance Rankings & SHAP */}
             <div className="lg:col-span-6 bg-white rounded-2xl border border-[#E8E4DF] p-6 shadow-2xs">
-              <h3 className="text-sm font-bold text-[#1E1915] mb-1">
-                Top Feature Importance Rankings
-              </h3>
+              <div className="flex items-center justify-between mb-1">
+                <h3 className="text-sm font-bold text-[#1E1915]">
+                  SHAP Global Feature Importance
+                </h3>
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-blue-50 text-[#0061FE] font-bold">
+                  Mean |SHAP| Values
+                </span>
+              </div>
               <p className="text-xs text-[#736B63] mb-4">
-                Relative Gini / Impurity contribution of each feature in the Random Forest ensemble.
+                Mean absolute SHAP value impact across holdout observations from TreeExplainer.
               </p>
 
               <div className="space-y-3">
                 {result.feature_importances?.map((feat: any) => {
-                  const pct = Math.round(feat.importance * 100);
+                  const maxImp = result.feature_importances[0]?.importance || 1;
+                  const pct = Math.round((feat.importance / maxImp) * 100);
                   return (
                     <div key={feat.feature} className="space-y-1">
                       <div className="flex items-center justify-between text-xs">
@@ -335,7 +379,7 @@ export function AutoMLSandbox({ datasetId, previewData }: AutoMLSandboxProps) {
                           {feat.feature}
                         </span>
                         <span className="font-mono text-[11px] text-[#736B63]">
-                          {(feat.importance * 100).toFixed(1)}%
+                          {feat.importance.toFixed(4)}
                         </span>
                       </div>
                       <div className="h-2 w-full bg-[#FAF8F5] border border-[#E8E4DF] rounded-full overflow-hidden">
@@ -350,6 +394,104 @@ export function AutoMLSandbox({ datasetId, previewData }: AutoMLSandboxProps) {
               </div>
             </div>
           </div>
+
+          {/* Section: SHAP Interpretability Suite (Summary Distribution & Waterfall) */}
+          {shapData && (
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+              {/* SHAP Summary Distribution */}
+              {summaryPlot && summaryPlot.length > 0 && (
+                <div className="lg:col-span-6 bg-white rounded-2xl border border-[#E8E4DF] p-6 shadow-2xs">
+                  <div className="flex items-center justify-between mb-1">
+                    <h3 className="text-sm font-bold text-[#1E1915]">
+                      SHAP Summary Distribution Plot
+                    </h3>
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 font-bold">
+                      Feature Impact Spread
+                    </span>
+                  </div>
+                  <p className="text-xs text-[#736B63] mb-4">
+                    Sample points showing directional effect (+ / -) of feature values on target prediction.
+                  </p>
+
+                  <div className="space-y-4">
+                    {summaryPlot.slice(0, 6).map((item: any) => (
+                      <div key={item.feature} className="space-y-1">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-mono font-semibold text-[#1E1915] truncate max-w-[200px]">
+                            {item.feature}
+                          </span>
+                          <span className="font-mono text-[10px] text-[#8C827A]">
+                            |SHAP|: {item.mean_abs_shap}
+                          </span>
+                        </div>
+                        {/* Dot strip visualizer */}
+                        <div className="h-6 w-full bg-[#FAF8F5] rounded-lg border border-[#E8E4DF] relative flex items-center px-2 overflow-hidden">
+                          <div className="absolute left-1/2 top-0 bottom-0 w-[1px] bg-[#D4CECA]" />
+                          {item.distribution?.map((pt: any, pIdx: number) => {
+                            // normalize shap value into -50% to +50% from center
+                            const offset = Math.max(-45, Math.min(45, pt.shap_value * 20));
+                            const isPositive = pt.shap_value >= 0;
+                            return (
+                              <div
+                                key={pIdx}
+                                className={`absolute w-2 h-2 rounded-full opacity-60 transition-all ${
+                                  isPositive ? "bg-[#0061FE]" : "bg-rose-500"
+                                }`}
+                                style={{ left: `calc(50% + ${offset}%)` }}
+                                title={`SHAP: ${pt.shap_value}, Val: ${pt.feature_value}`}
+                              />
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* SHAP Waterfall Decomposition */}
+              {waterfall && waterfall.feature_contributions && (
+                <div className="lg:col-span-6 bg-white rounded-2xl border border-[#E8E4DF] p-6 shadow-2xs">
+                  <div className="flex items-center justify-between mb-1">
+                    <h3 className="text-sm font-bold text-[#1E1915]">
+                      SHAP Waterfall Decomposition
+                    </h3>
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-bold">
+                      Sample Row #{waterfall.sample_index + 1}
+                    </span>
+                  </div>
+                  <p className="text-xs text-[#736B63] mb-4">
+                    Explaining prediction: Base ({waterfall.base_value}) → Predicted ({waterfall.prediction_value}).
+                  </p>
+
+                  <div className="space-y-2 max-h-[320px] overflow-y-auto">
+                    {waterfall.feature_contributions.slice(0, 8).map((fc: any) => {
+                      const isPositive = fc.shap_value >= 0;
+                      return (
+                        <div
+                          key={fc.feature}
+                          className="flex items-center justify-between p-2 rounded-xl bg-[#FAF8F5] border border-[#E8E4DF] text-xs font-mono"
+                        >
+                          <div className="flex items-center gap-2 truncate max-w-[200px]">
+                            <span className={`w-2 h-2 rounded-full ${isPositive ? "bg-emerald-500" : "bg-rose-500"}`} />
+                            <span className="font-semibold text-[#1E1915] truncate">{fc.feature}</span>
+                            <span className="text-[10px] text-[#8C827A]">={fc.feature_value}</span>
+                          </div>
+                          <span
+                            className={`font-bold ${
+                              isPositive ? "text-emerald-600" : "text-rose-600"
+                            }`}
+                          >
+                            {isPositive ? `+${fc.shap_value}` : fc.shap_value}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>

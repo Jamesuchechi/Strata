@@ -1,107 +1,145 @@
-"""Scientific and domain format parsers (PubChem SDF, MOL)."""
+"""Scientific and domain format parsers (PubChem SDF, MOL) using RDKit."""
 
-import re
-from typing import Any, Dict, List
+import math
+from typing import Any, Dict, List, Optional
 import pyarrow as pa
+from rdkit import Chem
+from rdkit.Chem import rdMolDescriptors, rdDepictor
 from strata_api.parsers.base import BaseParser
 
 
 class ScientificParser(BaseParser):
     """Parser for scientific molecular structures and chemical data (PubChem SDF/MOL)."""
 
-    def parse_preview(self, file_path: str, limit: int = 50) -> Dict[str, Any]:
-        """Extract compound records, 2D coordinates, bonds, and properties from SDF/MOL files."""
-        records = []
-        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-            content = f.read()
+    def parse_preview(self, file_path: str, limit: int = 100) -> Dict[str, Any]:
+        """Extract compound records, 2D coordinates, bonds, and chemical properties using RDKit."""
+        records: List[Dict[str, Any]] = []
+        molecules_data: List[Dict[str, Any]] = []
+        is_mol = file_path.lower().endswith(".mol")
 
-        raw_mols = [m for m in content.split("$$$$\n") if m.strip()][:limit]
-        molecules_data = []
-
-        for idx, mol in enumerate(raw_mols):
-            lines = [line.rstrip() for line in mol.strip().split("\n")]
-            if len(lines) < 4:
-                continue
-
-            title = lines[0].strip() or f"Compound #{idx+1}"
-
-            # Parse properties (e.g. > <PUBCHEM_COMPOUND_CID>)
-            props: Dict[str, Any] = {}
-            current_tag = None
-            for line in lines:
-                tag_match = re.match(r"^>\s*<([^>]+)>", line)
-                if tag_match:
-                    current_tag = tag_match.group(1).lower().replace(" ", "_")
-                elif current_tag and line.strip() and not line.startswith(">"):
-                    props[current_tag] = line.strip()
-                    current_tag = None
-
-            # Parse Counts line (usually line 4)
-            num_atoms, num_bonds = 0, 0
-            atoms: List[Dict[str, Any]] = []
-            bonds: List[Dict[str, Any]] = []
-
-            counts_line_idx = -1
-            for l_idx in range(3, min(len(lines), 6)):
-                if "V2000" in lines[l_idx] or "v2000" in lines[l_idx].lower():
-                    counts_line_idx = l_idx
+        if is_mol:
+            mol = Chem.MolFromMolFile(file_path, removeHs=False)
+            mols = [mol] if mol is not None else []
+        else:
+            # SDF file - supplier
+            suppl = Chem.SDMolSupplier(file_path, removeHs=False)
+            mols = []
+            for m in suppl:
+                if m is not None:
+                    mols.append(m)
+                if len(mols) >= limit:
                     break
 
-            if counts_line_idx != -1:
-                cline = lines[counts_line_idx]
+        for idx, mol in enumerate(mols):
+            # Extract raw SDF tags
+            props: Dict[str, Any] = {}
+            for prop_name in mol.GetPropNames():
+                props[prop_name.lower().replace(" ", "_")] = mol.GetProp(prop_name)
+
+            # Compute real chemical descriptors via RDKit
+            try:
+                formula = rdMolDescriptors.CalcMolFormula(mol)
+            except Exception:
+                formula = props.get("pubchem_molecular_formula", "")
+
+            try:
+                mol_wt = round(float(rdMolDescriptors.CalcExactMolWt(mol)), 3)
+            except Exception:
+                mol_wt = float(props.get("pubchem_molecular_weight", 0.0) or 0.0)
+
+            try:
+                log_p = round(float(rdMolDescriptors.CalcCrippenDescriptors(mol)[0]), 3)
+            except Exception:
+                log_p = 0.0
+
+            try:
+                num_hbd = int(rdMolDescriptors.CalcNumHBD(mol))
+                num_hba = int(rdMolDescriptors.CalcNumHBA(mol))
+                rotatable_bonds = int(rdMolDescriptors.CalcNumRotatableBonds(mol))
+            except Exception:
+                num_hbd, num_hba, rotatable_bonds = 0, 0, 0
+
+            try:
+                tpsa = round(float(rdMolDescriptors.CalcTPSA(mol)), 2)
+            except Exception:
+                tpsa = 0.0
+
+            try:
+                smiles = Chem.MolToSmiles(mol)
+            except Exception:
+                smiles = props.get("pubchem_openeye_can_smiles", "")
+
+            num_atoms = mol.GetNumAtoms()
+            num_bonds = mol.GetNumBonds()
+            num_rings = mol.GetRingInfo().NumRings() if mol.GetRingInfo() else 0
+
+            # 2D coordinates extraction
+            if mol.GetNumConformers() == 0:
                 try:
-                    num_atoms = int(cline[0:3].strip())
-                    num_bonds = int(cline[3:6].strip())
+                    rdDepictor.Compute2DCoords(mol)
                 except Exception:
                     pass
 
-                # Parse Atom Block
-                atom_start = counts_line_idx + 1
-                atom_end = atom_start + num_atoms
-                for a_idx in range(atom_start, min(atom_end, len(lines))):
-                    aline = lines[a_idx]
-                    parts = aline.split()
-                    if len(parts) >= 4:
-                        try:
-                            x = float(parts[0])
-                            y = float(parts[1])
-                            z = float(parts[2]) if len(parts) > 2 else 0.0
-                            sym = parts[3]
-                            atoms.append({"index": len(atoms) + 1, "x": x, "y": y, "z": z, "symbol": sym})
-                        except Exception:
-                            pass
+            conf = mol.GetConformer() if mol.GetNumConformers() > 0 else None
+            atoms: List[Dict[str, Any]] = []
+            for atom_idx, atom in enumerate(mol.GetAtoms()):
+                sym = atom.GetSymbol()
+                if conf:
+                    pos = conf.GetAtomPosition(atom_idx)
+                    x, y, z = round(float(pos.x), 3), round(float(pos.y), 3), round(float(pos.z), 3)
+                else:
+                    x, y, z = 0.0, 0.0, 0.0
+                atoms.append({
+                    "index": atom_idx + 1,
+                    "symbol": sym,
+                    "atomic_num": atom.GetAtomicNum(),
+                    "formal_charge": atom.GetFormalCharge(),
+                    "x": x,
+                    "y": y,
+                    "z": z,
+                })
 
-                # Parse Bond Block
-                bond_start = atom_end
-                bond_end = bond_start + num_bonds
-                for b_idx in range(bond_start, min(bond_end, len(lines))):
-                    bline = lines[b_idx]
-                    parts = bline.split()
-                    if len(parts) >= 3:
-                        try:
-                            a1 = int(parts[0])
-                            a2 = int(parts[1])
-                            btype = int(parts[2])
-                            bonds.append({"source": a1, "target": a2, "type": btype})
-                        except Exception:
-                            pass
+            bonds: List[Dict[str, Any]] = []
+            for bond in mol.GetBonds():
+                bonds.append({
+                    "source": bond.GetBeginAtomIdx() + 1,
+                    "target": bond.GetEndAtomIdx() + 1,
+                    "type": int(bond.GetBondTypeAsDouble()),
+                    "is_aromatic": bool(bond.GetIsAromatic()),
+                })
+
+            title = mol.GetProp("_Name") if mol.HasProp("_Name") and mol.GetProp("_Name").strip() else (
+                props.get("pubchem_iupac_name") or props.get("compound_title") or f"Compound #{idx+1}"
+            )
+            compound_id = props.get("pubchem_compound_cid") or props.get("cd_id") or f"CID-{idx+1}"
 
             rec = {
-                "compound_id": props.get("pubchem_compound_cid", f"CID-{idx+1}"),
+                "compound_id": compound_id,
                 "title": title,
-                "formula": props.get("pubchem_molecular_formula", ""),
-                "molecular_weight": props.get("pubchem_molecular_weight", ""),
-                "smiles": props.get("pubchem_openeye_can_smiles", ""),
-                "atom_count": len(atoms),
-                "bond_count": len(bonds),
+                "formula": formula,
+                "molecular_weight": mol_wt,
+                "log_p": log_p,
+                "h_bond_donors": num_hbd,
+                "h_bond_acceptors": num_hba,
+                "rotatable_bonds": rotatable_bonds,
+                "tpsa": tpsa,
+                "smiles": smiles,
+                "atom_count": num_atoms,
+                "bond_count": num_bonds,
+                "ring_count": num_rings,
                 **props,
             }
             records.append(rec)
 
-            if len(molecules_data) < 10:
+            if len(molecules_data) < 20:
                 molecules_data.append({
-                    "id": rec["compound_id"],
+                    "id": compound_id,
                     "title": title,
+                    "formula": formula,
+                    "molecular_weight": mol_wt,
+                    "log_p": log_p,
+                    "tpsa": tpsa,
+                    "smiles": smiles,
                     "atoms": atoms,
                     "bonds": bonds,
                     "properties": props,
@@ -111,21 +149,27 @@ class ScientificParser(BaseParser):
             {"name": "compound_id", "type": "string"},
             {"name": "title", "type": "string"},
             {"name": "formula", "type": "string"},
-            {"name": "molecular_weight", "type": "string"},
+            {"name": "molecular_weight", "type": "float64"},
+            {"name": "log_p", "type": "float64"},
+            {"name": "h_bond_donors", "type": "int64"},
+            {"name": "h_bond_acceptors", "type": "int64"},
+            {"name": "rotatable_bonds", "type": "int64"},
+            {"name": "tpsa", "type": "float64"},
             {"name": "smiles", "type": "string"},
             {"name": "atom_count", "type": "int64"},
             {"name": "bond_count", "type": "int64"},
+            {"name": "ring_count", "type": "int64"},
         ]
 
         return {
             "format": "scientific_sdf",
             "schema": schema,
-            "total_rows": len(raw_mols),
+            "total_rows": len(mols),
             "total_columns": len(schema),
             "preview_rows": records,
             "molecules_data": molecules_data,
         }
 
     def to_arrow(self, file_path: str) -> pa.Table:
-        preview = self.parse_preview(file_path, limit=1000)
+        preview = self.parse_preview(file_path, limit=2000)
         return pa.Table.from_pylist(preview["preview_rows"])

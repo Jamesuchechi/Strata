@@ -118,7 +118,9 @@ def _execute_pipeline_in_sandbox(pipe: Dict[str, Any], dry_run: bool = False, li
     import polars as pl
 
     target_id = pipe.get("target_dataset_id")
-    dataset = _datasets_db.get(target_id)
+    dataset = _datasets_db.get(target_id) if isinstance(target_id, str) else None
+    if not dataset and isinstance(target_id, str):
+        dataset = find_dataset_by_name_or_id(target_id)
     if not dataset:
         raise ValueError(f"Target dataset '{target_id}' not found in catalog")
 
@@ -357,6 +359,11 @@ async def run_pipeline(
         dataset_record=dataset,
         run_id=run_id,
     )
+    if job is None:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to enqueue pipeline run job in Redis queue.",
+        )
 
     return {
         "status": "queued",
@@ -379,13 +386,13 @@ async def list_pipeline_runs(
     """List execution history across pipelines (Pillar 7.6)."""
     # Sync from database to pick up any runs completed by the worker process
     from strata_api.core.persistence import SyncSessionLocal
-    from strata_api.models.persistence import PipelineRunModel
+    from strata_api.models import PipelineRunModel
     from sqlalchemy import select
 
     with SyncSessionLocal() as session:
         db_runs = session.scalars(select(PipelineRunModel)).all()
         for r in db_runs:
-            _pipeline_runs[r.id] = r.to_dict()
+            _pipeline_runs[str(r.id)] = r.to_dict()
 
     runs = list(_pipeline_runs.values())
     if pipeline_id:

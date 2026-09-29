@@ -44,6 +44,50 @@ export interface PreviewData {
   column_stats?: ColumnStat[];
   pii_flags?: Record<string, string>;
   quality_score?: QualityScore;
+  geo_metadata?: {
+    crs?: string;
+    bounds?: number[];
+    center?: number[];
+    valid_geometries_count?: number;
+    empty_geometries_count?: number;
+    geom_type_counts?: Record<string, number>;
+    sample_geometries?: Array<{
+      id: string | number;
+      type: string;
+      is_valid: boolean;
+      coordinates?: any;
+      properties?: Record<string, any>;
+    }>;
+  };
+  molecules_data?: Array<{
+    id: string;
+    compound_id?: string;
+    title: string;
+    formula: string;
+    molecular_weight: number;
+    log_p?: number;
+    tpsa?: number;
+    h_bond_donors?: number;
+    h_bond_acceptors?: number;
+    rotatable_bonds?: number;
+    ring_count?: number;
+    smiles?: string;
+    atoms?: Array<{
+      index: number;
+      symbol: string;
+      atomic_num?: number;
+      x: number;
+      y: number;
+      z: number;
+    }>;
+    bonds?: Array<{
+      source: number;
+      target: number;
+      type: number;
+      is_aromatic?: boolean;
+    }>;
+    properties?: Record<string, any>;
+  }>;
   is_duplicate?: boolean;
   existing_dataset_id?: string;
   existing_dataset_name?: string;
@@ -414,12 +458,14 @@ export interface SemanticSearchResultItem {
   total_columns: number;
   quality_score?: number;
   similarity_score: number;
+  search_type?: "semantic" | "keyword";
   matched_reasons: string[];
   matched_columns: string[];
 }
 
 export interface SemanticSearchResponse {
   query?: string;
+  search_type?: string;
   total_matches: number;
   results: SemanticSearchResultItem[];
 }
@@ -530,7 +576,7 @@ export interface PipelineRun {
   pipeline_name: string;
   status: "success" | "failed" | "running";
   started_at: string;
-  completed_at: string;
+  completed_at?: string;
   duration_ms: number;
   input_rows: number;
   output_rows: number;

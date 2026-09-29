@@ -36,6 +36,7 @@ import {
   deleteDataset,
   searchDatasets,
   searchSemanticDatasets,
+  searchKeywordDatasets,
   toggleDatasetFavorite,
   fetchDatasetFavorites,
   fetchDatasetRecommendations,
@@ -96,6 +97,14 @@ export default function DatasetsPage() {
     try {
       if (isSemanticMode) {
         const resp = await searchSemanticDatasets({
+          q: searchQuery || undefined,
+          column: columnQuery || undefined,
+          format: selectedFormat !== "all" ? selectedFormat : undefined,
+          min_quality: minQuality,
+        });
+        setDatasets(resp.results || []);
+      } else if (searchQuery || columnQuery) {
+        const resp = await searchKeywordDatasets({
           q: searchQuery || undefined,
           column: columnQuery || undefined,
           format: selectedFormat !== "all" ? selectedFormat : undefined,
@@ -520,8 +529,12 @@ export default function DatasetsPage() {
                         {ds.format}
                       </span>
                       {ds.similarity_score !== undefined && (
-                        <span className="px-2 py-0.5 rounded-full bg-purple-100 text-purple-800 text-[10px] font-bold border border-purple-200">
-                          {Math.round(ds.similarity_score * 100)}% Match
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                          ds.search_type === "keyword"
+                            ? "bg-blue-50 text-blue-800 border-blue-200"
+                            : "bg-purple-100 text-purple-800 border-purple-200"
+                        }`}>
+                          {ds.search_type === "keyword" ? "Keyword" : "AI"} {Math.round(ds.similarity_score * 100)}% Match
                         </span>
                       )}
                     </div>

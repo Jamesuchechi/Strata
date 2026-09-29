@@ -295,8 +295,9 @@ async def test_admin_and_platform_ops():
         assert "tiers" in rate_resp.json()
 
         # Worker queue observability
-        queue_resp = await ac.get("/api/security/admin/queues")
-        assert queue_resp.status_code == 200
-        q_data = queue_resp.json()
-        assert q_data["active_workers"] >= 1
-        assert "dead_letter_count" in q_data
+        with patch("strata_api.routers.security.get_arq_pool", return_value=AsyncMock()):
+            queue_resp = await ac.get("/api/security/admin/queues")
+            assert queue_resp.status_code == 200
+            q_data = queue_resp.json()
+            assert q_data["active_workers"] >= 1
+            assert "dead_letter_count" in q_data

@@ -1,6 +1,8 @@
 """SQLAlchemy ORM models for Git-style versioning: Commits and Branches."""
 
-from sqlalchemy import Boolean, Column, Integer, String, Text, JSON
+from typing import Any, Dict, List, Optional
+from sqlalchemy import Boolean, Integer, String, Text, JSON
+from sqlalchemy.orm import Mapped, mapped_column
 from strata_api.core.database import Base
 
 
@@ -8,25 +10,25 @@ class CommitModel(Base):
     """Immutable Git-style dataset commit."""
     __tablename__ = "commits"
 
-    id = Column(String(64), primary_key=True)
-    hash = Column(String(16), nullable=False, index=True)
-    full_hash = Column(String(128), nullable=False, index=True)
-    dataset_name = Column(String(255), nullable=False, index=True)
-    parent_hash = Column(String(128), nullable=True)
-    version_tag = Column(String(32), default="v1.0.0", nullable=False)
-    message = Column(Text, nullable=False)
-    author = Column(String(128), default="James Uchechi", nullable=False)
-    timestamp = Column(String(64), nullable=False)
-    delta_rows = Column(String(64), default="+0 rows", nullable=False)
-    delta_columns = Column(String(64), default="+0 cols", nullable=False)
-    added_cols = Column(JSON, default=list, nullable=False)
-    removed_cols = Column(JSON, default=list, nullable=False)
-    modified_cols = Column(JSON, default=list, nullable=False)
-    tags = Column(JSON, default=list, nullable=False)
-    is_pinned = Column(Boolean, default=False, nullable=False)
-    access_level = Column(String(32), default="workspace", nullable=False)
-    custom_metadata = Column(JSON, default=dict, nullable=False)
-    owner_id = Column(String(64), nullable=True, index=True)
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    hash: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    full_hash: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    dataset_name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    parent_hash: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    version_tag: Mapped[str] = mapped_column(String(32), default="v1.0.0", nullable=False)
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    author: Mapped[str] = mapped_column(String(128), default="James Uchechi", nullable=False)
+    timestamp: Mapped[str] = mapped_column(String(64), nullable=False)
+    delta_rows: Mapped[str] = mapped_column(String(64), default="+0 rows", nullable=False)
+    delta_columns: Mapped[str] = mapped_column(String(64), default="+0 cols", nullable=False)
+    added_cols: Mapped[List[Any]] = mapped_column(JSON, default=list, nullable=False)
+    removed_cols: Mapped[List[Any]] = mapped_column(JSON, default=list, nullable=False)
+    modified_cols: Mapped[List[Any]] = mapped_column(JSON, default=list, nullable=False)
+    tags: Mapped[List[Any]] = mapped_column(JSON, default=list, nullable=False)
+    is_pinned: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    access_level: Mapped[str] = mapped_column(String(32), default="workspace", nullable=False)
+    custom_metadata: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+    owner_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
 
     def to_dict(self):
         added = self.added_cols or []
@@ -70,19 +72,19 @@ class BranchModel(Base):
     """Git-style dataset branch."""
     __tablename__ = "branches"
 
-    id = Column(String(128), primary_key=True)  # dataset_name:branch_name
-    dataset_name = Column(String(255), nullable=False, index=True)
-    name = Column(String(128), nullable=False, index=True)
-    head_commit_id = Column(String(64), nullable=False)
-    head_hash = Column(String(128), nullable=False)
-    is_default = Column(Boolean, default=False, nullable=False)
-    protected = Column(Boolean, default=False, nullable=False)
-    created_at = Column(String(64), nullable=False)
-    created_by = Column(String(128), default="System", nullable=False)
-    description = Column(Text, nullable=True)
-    ahead_count = Column(Integer, default=0, nullable=False)
-    behind_count = Column(Integer, default=0, nullable=False)
-    is_active = Column(Boolean, default=False, nullable=False)
+    id: Mapped[str] = mapped_column(String(128), primary_key=True)  # dataset_name:branch_name
+    dataset_name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    head_commit_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    head_hash: Mapped[str] = mapped_column(String(128), nullable=False)
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    protected: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    created_at: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_by: Mapped[str] = mapped_column(String(128), default="System", nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    ahead_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    behind_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     def to_dict(self):
         return {

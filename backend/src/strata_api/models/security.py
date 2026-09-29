@@ -1,6 +1,8 @@
 """SQLAlchemy ORM models for security and audit trail."""
 
-from sqlalchemy import Column, String, Text, JSON
+from typing import Any, Dict
+from sqlalchemy import String, Text, JSON
+from sqlalchemy.orm import Mapped, mapped_column
 from strata_api.core.database import Base
 
 
@@ -8,17 +10,17 @@ class AuditTrailModel(Base):
     """Cryptographic immutable audit log entry."""
     __tablename__ = "audit_trail"
 
-    id = Column(String(64), primary_key=True)
-    actor = Column(String(128), nullable=False, index=True)
-    action = Column(String(128), nullable=False, index=True)
-    target = Column(String(255), nullable=False)
-    ip_address = Column(String(64), default="127.0.0.1", nullable=False)
-    timestamp = Column(String(64), nullable=False, index=True)
-    details = Column(JSON, default=dict, nullable=False)
-    prev_hash = Column(String(64), nullable=False)
-    hash = Column(String(64), nullable=False)
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    actor: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    action: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    target: Mapped[str] = mapped_column(String(255), nullable=False)
+    ip_address: Mapped[str] = mapped_column(String(64), default="127.0.0.1", nullable=False)
+    timestamp: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    details: Mapped[Any] = mapped_column(JSON, default=dict, nullable=False)
+    prev_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    hash: Mapped[str] = mapped_column(String(64), nullable=False)
 
-    def to_dict(self):
+    def to_dict(self) -> Dict[str, Any]:
         return {
             "id": self.id,
             "actor": self.actor,

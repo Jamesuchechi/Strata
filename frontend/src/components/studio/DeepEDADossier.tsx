@@ -26,7 +26,7 @@ export function DeepEDADossier({ datasetId }: DeepEDADossierProps) {
   const [error, setError] = useState<string | null>(null);
 
   // Hypothesis testing sub-state
-  const [testType, setTestType] = useState<"ttest" | "anova" | "chi2" | "mannwhitney">("ttest");
+  const [testType, setTestType] = useState<"ttest" | "anova" | "chi2" | "mannwhitney" | "regression" | "paired_ttest">("ttest");
   const [targetCol, setTargetCol] = useState<string>("");
   const [groupCol, setGroupCol] = useState<string>("");
   const [col2, setCol2] = useState<string>("");
@@ -263,12 +263,20 @@ export function DeepEDADossier({ datasetId }: DeepEDADossierProps) {
               <option value="anova">One-Way ANOVA (3+ Groups)</option>
               <option value="chi2">Chi-Square Test (Categorical)</option>
               <option value="mannwhitney">Mann-Whitney U (Non-parametric)</option>
+              <option value="regression">OLS Linear Regression (Y on X)</option>
+              <option value="paired_ttest">Paired Samples t-test (2 Columns)</option>
             </select>
           </div>
 
           <div>
             <label className="text-[11px] font-semibold text-[#736B63] block mb-1">
-              {testType === "chi2" ? "Categorical Feature 1" : "Numerical Variable (Y)"}
+              {testType === "chi2"
+                ? "Categorical Feature 1"
+                : testType === "regression"
+                ? "Dependent Variable (Y)"
+                : testType === "paired_ttest"
+                ? "First Measure (Col 1)"
+                : "Numerical Variable (Y)"}
             </label>
             <select
               value={targetCol}
@@ -283,14 +291,20 @@ export function DeepEDADossier({ datasetId }: DeepEDADossierProps) {
 
           <div>
             <label className="text-[11px] font-semibold text-[#736B63] block mb-1">
-              {testType === "chi2" ? "Categorical Feature 2" : "Grouping Variable (X)"}
+              {testType === "chi2"
+                ? "Categorical Feature 2"
+                : testType === "regression"
+                ? "Predictor Variable (X)"
+                : testType === "paired_ttest"
+                ? "Second Measure (Col 2)"
+                : "Grouping Variable (X)"}
             </label>
             <select
-              value={testType === "chi2" ? col2 : groupCol}
-              onChange={(e) => testType === "chi2" ? setCol2(e.target.value) : setGroupCol(e.target.value)}
+              value={testType === "chi2" || testType === "regression" || testType === "paired_ttest" ? col2 : groupCol}
+              onChange={(e) => (testType === "chi2" || testType === "regression" || testType === "paired_ttest") ? setCol2(e.target.value) : setGroupCol(e.target.value)}
               className="w-full px-3 py-1.5 rounded-xl border border-[#E8E4DF] bg-[#FAF8F5] text-xs font-semibold text-[#1E1915] outline-none"
             >
-              {edaData.categorical_columns?.map((c: string) => (
+              {(testType === "regression" || testType === "paired_ttest" ? numCols : edaData.categorical_columns)?.map((c: string) => (
                 <option key={c} value={c}>{c}</option>
               ))}
             </select>
@@ -342,9 +356,18 @@ export function DeepEDADossier({ datasetId }: DeepEDADossierProps) {
               {testResult.takeaway}
             </p>
 
-            <div className="flex items-center gap-4 text-[11px] font-mono text-[#736B63] pt-1">
+            <div className="flex flex-wrap items-center gap-4 text-[11px] font-mono text-[#736B63] pt-1">
               <span>Statistic: <strong>{testResult.statistic}</strong></span>
               <span>p-value: <strong>{testResult.p_value < 0.0001 ? "< 0.0001" : testResult.p_value.toFixed(4)}</strong></span>
+              {testResult.r_squared !== undefined && (
+                <span>R²: <strong className="text-[#0061FE]">{testResult.r_squared}</strong></span>
+              )}
+              {testResult.slope !== undefined && (
+                <span>Slope (β): <strong>{testResult.slope}</strong></span>
+              )}
+              {testResult.degrees_of_freedom !== undefined && (
+                <span>df: <strong>{testResult.degrees_of_freedom}</strong></span>
+              )}
             </div>
 
             {testResult.group_summaries && (

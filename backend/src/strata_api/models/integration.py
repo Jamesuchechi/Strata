@@ -1,6 +1,8 @@
 """SQLAlchemy ORM models for ecosystem integrations and webhooks."""
 
-from sqlalchemy import Boolean, Column, Integer, String, Text, JSON
+from typing import Optional, Any, Dict
+from sqlalchemy import Boolean, Integer, String, Text, JSON
+from sqlalchemy.orm import Mapped, mapped_column
 from strata_api.core.database import Base
 
 
@@ -8,14 +10,14 @@ class WebhookConfigModel(Base):
     """Outgoing webhook integration configurations."""
     __tablename__ = "webhook_configs"
 
-    id = Column(String(64), primary_key=True)
-    service = Column(String(64), nullable=False)
-    name = Column(String(128), nullable=False)
-    url = Column(Text, nullable=False)
-    events = Column(JSON, default=list, nullable=False)
-    is_active = Column(Boolean, default=True, nullable=False)
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    service: Mapped[str] = mapped_column(String(64), nullable=False)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    url: Mapped[str] = mapped_column(Text, nullable=False)
+    events: Mapped[Any] = mapped_column(JSON, default=list, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
-    def to_dict(self):
+    def to_dict(self) -> Dict[str, Any]:
         return {
             "id": self.id,
             "service": self.service,
@@ -30,16 +32,16 @@ class IntegrationEventModel(Base):
     """Dispatched webhook event telemetry and response logs."""
     __tablename__ = "integration_events"
 
-    id = Column(String(64), primary_key=True)
-    webhook_id = Column(String(64), nullable=True, index=True)
-    event_type = Column(String(64), nullable=False, index=True)
-    payload = Column(JSON, default=dict, nullable=False)
-    status = Column(String(32), default="delivered", nullable=False)
-    status_code = Column(Integer, default=200, nullable=False)
-    response_body = Column(Text, nullable=True)
-    timestamp = Column(String(64), nullable=False)
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    webhook_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
+    event_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    payload: Mapped[Any] = mapped_column(JSON, default=dict, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="delivered", nullable=False)
+    status_code: Mapped[int] = mapped_column(Integer, default=200, nullable=False)
+    response_body: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    timestamp: Mapped[str] = mapped_column(String(64), nullable=False)
 
-    def to_dict(self):
+    def to_dict(self) -> Dict[str, Any]:
         return {
             "id": self.id,
             "webhook_id": self.webhook_id,

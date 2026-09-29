@@ -1,6 +1,6 @@
 import os
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 import duckdb
 from strata_api.config import settings
 
@@ -138,7 +138,11 @@ class DuckDBEngine:
             relation = self.conn.execute(sql)
 
         df = relation.fetchdf()
-        return df.to_dict(orient="records")
+        return cast(List[Dict[str, Any]], df.to_dict(orient="records"))
+
+    def execute_query(self, sql: str, params: Optional[List[Any]] = None) -> List[Dict[str, Any]]:
+        """Alias for query() for backward compatibility."""
+        return self.query(sql, params)
 
     def query_arrow(self, sql: str, params: Optional[List[Any]] = None):
         """Execute a query and return Arrow Table for zero-copy streaming."""

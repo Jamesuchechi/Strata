@@ -1,8 +1,9 @@
 """SQLAlchemy ORM models for datasets, versions, and share links."""
 
+from typing import Optional, Any, Dict, List
 from datetime import datetime, timezone
-from sqlalchemy import Column, String, Integer, DateTime, ForeignKey, Text, JSON, Float, Boolean
-from sqlalchemy.orm import relationship
+from sqlalchemy import String, Integer, DateTime, ForeignKey, Text, JSON, Float, Boolean
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from strata_api.core.database import Base
 
 
@@ -10,38 +11,38 @@ class DatasetModel(Base):
     """Dataset metadata record."""
     __tablename__ = "datasets"
 
-    id = Column(String(64), primary_key=True)
-    owner_id = Column(String(64), nullable=True, index=True)
-    workspace_id = Column(String(64), nullable=True, index=True)
-    name = Column(String(255), nullable=False, index=True)
-    filename = Column(String(255), nullable=False)
-    file_path = Column(Text, nullable=False)
-    description = Column(Text, nullable=True)
-    tags = Column(JSON, default=list, nullable=False)
-    format = Column(String(32), default="unknown", nullable=False)
-    content_hash = Column(String(128), nullable=False, index=True)
-    view_name = Column(String(128), nullable=False, index=True)
-    total_rows = Column(Integer, default=0, nullable=False)
-    total_columns = Column(Integer, default=0, nullable=False)
-    size_bytes = Column(Integer, default=0, nullable=False)
-    created_at = Column(String(64), nullable=False)
-    quality_score = Column(Float, default=90.0, nullable=False)
-    latest_version = Column(String(32), default="v1.0.0", nullable=False)
-    version_count = Column(Integer, default=1, nullable=False)
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    owner_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
+    workspace_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    file_path: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    tags: Mapped[Any] = mapped_column(JSON, default=list, nullable=False)
+    format: Mapped[str] = mapped_column(String(32), default="unknown", nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    view_name: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    total_rows: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    total_columns: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[str] = mapped_column(String(64), nullable=False)
+    quality_score: Mapped[float] = mapped_column(Float, default=90.0, nullable=False)
+    latest_version: Mapped[str] = mapped_column(String(32), default="v1.0.0", nullable=False)
+    version_count: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     
     # Cached preview fields for high-performance retrieval
-    schema_fields = Column(JSON, default=list, nullable=False)
-    preview_rows = Column(JSON, default=list, nullable=False)
-    sheets = Column(JSON, nullable=True)
-    active_sheet = Column(String(128), nullable=True)
-    column_stats = Column(JSON, default=list, nullable=False)
-    pii_flags = Column(JSON, default=dict, nullable=False)
-    full_quality = Column(JSON, nullable=True)
+    schema_fields: Mapped[Any] = mapped_column(JSON, default=list, nullable=False)
+    preview_rows: Mapped[Any] = mapped_column(JSON, default=list, nullable=False)
+    sheets: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
+    active_sheet: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    column_stats: Mapped[Any] = mapped_column(JSON, default=list, nullable=False)
+    pii_flags: Mapped[Any] = mapped_column(JSON, default=dict, nullable=False)
+    full_quality: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
 
-    versions = relationship("VersionModel", back_populates="dataset", cascade="all, delete-orphan")
-    share_links = relationship("ShareLinkModel", back_populates="dataset", cascade="all, delete-orphan")
+    versions: Mapped[List["VersionModel"]] = relationship("VersionModel", back_populates="dataset", cascade="all, delete-orphan")
+    share_links: Mapped[List["ShareLinkModel"]] = relationship("ShareLinkModel", back_populates="dataset", cascade="all, delete-orphan")
 
-    def to_dict(self):
+    def to_dict(self) -> Dict[str, Any]:
         """Serialize model into dictionary format matching dataset router contract."""
         return {
             "id": self.id,
@@ -76,34 +77,34 @@ class VersionModel(Base):
     """Immutable dataset version checkpoint."""
     __tablename__ = "dataset_versions"
 
-    id = Column(String(64), primary_key=True)
-    dataset_id = Column(String(64), ForeignKey("datasets.id"), nullable=False, index=True)
-    version_hash = Column(String(128), nullable=False, index=True)
-    parent_version_hash = Column(String(128), nullable=True)
-    version_tag = Column(String(32), default="v1.0.0", nullable=False)
-    message = Column(Text, nullable=True)
-    format = Column(String(32), default="parquet", nullable=False)
-    byte_size = Column(Integer, default=0, nullable=False)
-    row_count = Column(Integer, default=0, nullable=False)
-    column_count = Column(Integer, default=0, nullable=False)
-    schema_json = Column(JSON, default=list, nullable=False)
-    profile_json = Column(JSON, nullable=True)
-    created_at = Column(String(64), nullable=False)
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    dataset_id: Mapped[str] = mapped_column(String(64), ForeignKey("datasets.id"), nullable=False, index=True)
+    version_hash: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    parent_version_hash: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    version_tag: Mapped[str] = mapped_column(String(32), default="v1.0.0", nullable=False)
+    message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    format: Mapped[str] = mapped_column(String(32), default="parquet", nullable=False)
+    byte_size: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    row_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    column_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    schema_json: Mapped[Any] = mapped_column(JSON, default=list, nullable=False)
+    profile_json: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[str] = mapped_column(String(64), nullable=False)
 
-    dataset = relationship("DatasetModel", back_populates="versions")
+    dataset: Mapped["DatasetModel"] = relationship("DatasetModel", back_populates="versions")
 
 
 class ShareLinkModel(Base):
     """Public read-only shareable links for datasets."""
     __tablename__ = "share_links"
 
-    token = Column(String(64), primary_key=True)
-    dataset_id = Column(String(64), ForeignKey("datasets.id"), nullable=False, index=True)
-    created_at = Column(String(64), nullable=False)
+    token: Mapped[str] = mapped_column(String(64), primary_key=True)
+    dataset_id: Mapped[str] = mapped_column(String(64), ForeignKey("datasets.id"), nullable=False, index=True)
+    created_at: Mapped[str] = mapped_column(String(64), nullable=False)
 
-    dataset = relationship("DatasetModel", back_populates="share_links")
+    dataset: Mapped["DatasetModel"] = relationship("DatasetModel", back_populates="share_links")
 
-    def to_dict(self):
+    def to_dict(self) -> Dict[str, Any]:
         return {
             "token": self.token,
             "dataset_id": self.dataset_id,

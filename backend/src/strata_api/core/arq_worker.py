@@ -354,14 +354,62 @@ async def train_automl_task(
         X_clean, y, test_size=0.25, random_state=42, stratify=stratify
     )
 
-    leakage_warnings: List[str] = []
+    # Clean feature names for tree algorithms (LightGBM/XGBoost forbid JSON special chars)
+    import re
+    clean_feature_names = [re.sub(r'[\[\]<>, ":{}]', '_', str(c)) for c in X_clean.columns]
+    X_train.columns = clean_feature_names
+    X_test.columns = clean_feature_names
+
+    model_family_norm = (model_family or "random_forest").lower().strip()
+
+    if model_family_norm in ("lightgbm", "lgbm"):
+        import lightgbm as lgb  # type: ignore
+        model_name = "LightGBM"
+        if task == "classification":
+            model = lgb.LGBMClassifier(
+                n_estimators=100,
+                max_depth=6,
+                min_child_samples=1,
+                random_state=42,
+                verbose=-1,
+            )
+        else:
+            model = lgb.LGBMRegressor(
+                n_estimators=100,
+                max_depth=6,
+                min_child_samples=1,
+                random_state=42,
+                verbose=-1,
+            )
+    elif model_family_norm in ("xgboost", "xgb"):
+        import xgboost as xgb  # type: ignore
+        model_name = "XGBoost"
+        if task == "classification":
+            model = xgb.XGBClassifier(
+                n_estimators=100,
+                max_depth=6,
+                random_state=42,
+                eval_metric="logloss" if len(class_labels) <= 2 else "mlogloss",
+            )
+        else:
+            model = xgb.XGBRegressor(
+                n_estimators=100,
+                max_depth=6,
+                random_state=42,
+            )
+    else:
+        model_name = "Random Forest"
+        if task == "classification":
+            model = RandomForestClassifier(n_estimators=100, max_depth=6, random_state=42)
+        else:
+            model = RandomForestRegressor(n_estimators=100, max_depth=6, random_state=42)
+
+    model.fit(X_train, y_train)
+    y_pred = model.predict(X_test)
+    y_pred_arr = np.asarray(y_pred)
+    y_prob = model.predict_proba(X_test) if hasattr(model, "predict_proba") else None
 
     if task == "classification":
-        model = RandomForestClassifier(n_estimators=100, max_depth=6, random_state=42)
-        model.fit(X_train, y_train)
-        y_pred = model.predict(X_test)
-        y_prob = model.predict_proba(X_test) if hasattr(model, "predict_proba") else None
-
         acc   = float(accuracy_score(y_test, y_pred))
         prec  = float(precision_score(y_test, y_pred, average="weighted", zero_division=0))
         rec   = float(recall_score(y_test, y_pred, average="weighted", zero_division=0))
@@ -370,7 +418,8 @@ async def train_automl_task(
 
         roc_data = None
         if len(class_labels) == 2 and y_prob is not None:
-            fpr, tpr, _ = roc_curve(y_test, y_prob[:, 1])
+            y_prob_mat = np.asarray(y_prob)
+            fpr, tpr, _ = roc_curve(y_test, y_prob_mat[:, 1])
             roc_data = {
                 "auc": round(float(auc(fpr, tpr)), 3),
                 "points": [
@@ -390,13 +439,9 @@ async def train_automl_task(
             "roc": roc_data,
         }
     else:
-        model = RandomForestRegressor(n_estimators=100, max_depth=6, random_state=42)
-        model.fit(X_train, y_train)
-        y_pred = model.predict(X_test)
-
         residuals = [
             {"actual": round(float(a), 2), "predicted": round(float(p), 2), "residual": round(float(a - p), 2)}
-            for a, p in zip(y_test, y_pred)
+            for a, p in zip(y_test, y_pred_arr)
         ][:40]
 
         diagnostics = {
@@ -407,29 +452,177 @@ async def train_automl_task(
             "residuals": residuals,
         }
 
-    importances = model.feature_importances_
-    features_ranked = sorted(
-        [{"feature": col, "importance": round(float(imp), 4)} for col, imp in zip(X_clean.columns, importances)],
-        key=lambda x: x["importance"],
-        reverse=True,
-    )
+    # Compute real SHAP values with TreeExplainer
+    import shap  # type: ignore
+    eval_X = X_test.iloc[:100] if len(X_test) > 100 else X_test
 
-    if features_ranked and features_ranked[0]["importance"] > 0.85:
-        leakage_warnings.append(
-            f"Possible Data Leakage: '{features_ranked[0]['feature']}' accounts for "
-            f"{features_ranked[0]['importance'] * 100:.1f}% of model importance."
-        )
+    try:
+        explainer = shap.TreeExplainer(model)
+        raw_shap = explainer.shap_values(eval_X)
+
+        if isinstance(raw_shap, list):
+            if len(raw_shap) == 2:
+                shap_matrix = np.asarray(raw_shap[1])
+            else:
+                shap_matrix = np.mean([np.abs(np.asarray(s)) for s in raw_shap], axis=0)
+        elif isinstance(raw_shap, np.ndarray) and raw_shap.ndim == 3:
+            if raw_shap.shape[-1] == 2:
+                shap_matrix = raw_shap[:, :, 1]
+            else:
+                shap_matrix = np.mean(np.abs(raw_shap), axis=-1)
+        else:
+            shap_matrix = np.asarray(raw_shap)
+
+        exp_val = getattr(explainer, "expected_value", 0.0)
+        if isinstance(exp_val, (list, np.ndarray)):
+            base_val = float(exp_val[1]) if len(exp_val) == 2 else float(exp_val[0])
+        else:
+            base_val = float(exp_val)
+    except Exception:
+        try:
+            explainer = shap.Explainer(model, X_train.iloc[:50])
+            explanation = explainer(eval_X)
+            if isinstance(explanation, list):
+                vals = [np.asarray(e.values if hasattr(e, "values") else e) for e in explanation]
+                base_vals = [e.base_values if hasattr(e, "base_values") else 0.0 for e in explanation]
+                if len(vals) == 2:
+                    shap_matrix = np.asarray(vals[1])
+                    b_val = base_vals[1]
+                    base_val = float(np.mean(b_val)) if hasattr(b_val, "__iter__") or isinstance(b_val, (list, np.ndarray)) else float(b_val)
+                else:
+                    shap_matrix = np.mean([np.abs(np.asarray(v)) for v in vals], axis=0)
+                    base_val = float(np.mean([np.mean(bv) if hasattr(bv, "__iter__") or isinstance(bv, (list, np.ndarray)) else bv for bv in base_vals]))
+            else:
+                raw_val = getattr(explanation, "values", explanation)
+                val_arr = np.asarray(raw_val)
+                if val_arr.ndim == 3:
+                    shap_matrix = val_arr[:, :, 1] if val_arr.shape[-1] == 2 else np.mean(np.abs(val_arr), axis=-1)
+                else:
+                    shap_matrix = val_arr
+                exp_base = getattr(explanation, "base_values", 0.0)
+                if isinstance(exp_base, (list, np.ndarray)) or hasattr(exp_base, "__iter__"):
+                    base_val = float(np.mean(exp_base))
+                else:
+                    base_val = float(exp_base)
+        except Exception:
+            shap_matrix = np.zeros((len(eval_X), len(clean_feature_names)))
+            base_val = 0.0
+
+    shap_matrix = np.asarray(shap_matrix)
+    mean_abs_shap = np.mean(np.abs(shap_matrix), axis=0)
+    if mean_abs_shap.ndim > 1:
+        mean_abs_shap = mean_abs_shap.flatten()
+
+    feature_names = clean_feature_names
+    ranked_indices = np.argsort(mean_abs_shap)[::-1]
+
+    features_ranked = [
+        {
+            "feature": feature_names[i],
+            "importance": round(float(mean_abs_shap[i]), 4),
+            "mean_abs_shap": round(float(mean_abs_shap[i]), 4),
+        }
+        for i in ranked_indices
+    ]
+
+    # SHAP Summary Plot Distribution
+    summary_plot_data = []
+    for i in ranked_indices[:15]:
+        col_name = feature_names[i]
+        points = []
+        col_vals = eval_X[col_name].to_numpy()
+        col_shaps = shap_matrix[:, i]
+        for fv, sv in zip(col_vals[:50], col_shaps[:50]):
+            points.append({
+                "feature_value": round(float(fv), 3) if isinstance(fv, (int, float, np.number)) else str(fv),
+                "shap_value": round(float(sv), 4),
+            })
+        summary_plot_data.append({
+            "feature": col_name,
+            "mean_abs_shap": round(float(mean_abs_shap[i]), 4),
+            "distribution": points,
+        })
+
+    # SHAP Waterfall for Sample Row
+    sample_idx = 0
+    sample_features = []
+    if len(eval_X) > 0:
+        row_vals = eval_X.iloc[sample_idx]
+        row_shaps = shap_matrix[sample_idx]
+        for i in ranked_indices[:15]:
+            sample_features.append({
+                "feature": feature_names[i],
+                "feature_value": round(float(row_vals.iloc[i]), 3) if isinstance(row_vals.iloc[i], (int, float, np.number)) else str(row_vals.iloc[i]),
+                "shap_value": round(float(row_shaps[i]), 4),
+            })
+
+    waterfall_data = {
+        "sample_index": sample_idx,
+        "base_value": round(base_val, 4),
+        "prediction_value": round(float(y_pred_arr[sample_idx]) if len(y_pred_arr) > 0 else 0.0, 4),
+        "feature_contributions": sample_features,
+    }
+
+    # Data Leakage Detection
+    leakage_warnings: List[str] = []
+
+    # 1. Target Correlation / Exact Match Leakage
+    for col in clean_feature_names:
+        if is_numeric:
+            try:
+                corr = np.abs(np.corrcoef(X_clean[col].to_numpy(), y.to_numpy())[0, 1])
+                if not np.isnan(corr) and corr > 0.98:
+                    leakage_warnings.append(
+                        f"Target Leakage Suspicion: Feature '{col}' has extreme correlation ({corr:.3f}) with target."
+                    )
+            except Exception:
+                pass
+        try:
+            if (X_clean[col] == y).mean() > 0.98:
+                leakage_warnings.append(
+                    f"Direct Target Leakage: Feature '{col}' matches target values identically on >98% of rows."
+                )
+        except Exception:
+            pass
+
+    # 2. Train/Test Contamination
+    try:
+        train_hashes = pd.util.hash_pandas_object(X_train).to_numpy()
+        test_hashes = pd.util.hash_pandas_object(X_test).to_numpy()
+        overlap_count = np.intersect1d(train_hashes, test_hashes).size
+        if overlap_count > 0:
+            pct_overlap = (overlap_count / len(X_test)) * 100
+            leakage_warnings.append(
+                f"Train/Test Contamination: {overlap_count} duplicate rows ({pct_overlap:.1f}% of test set) appear in both train and test splits."
+            )
+    except Exception:
+        pass
+
+    # 3. Disproportionate Feature Dominance (>85% SHAP importance)
+    if features_ranked:
+        total_imp = sum(f["importance"] for f in features_ranked) or 1.0
+        top_pct = features_ranked[0]["importance"] / total_imp
+        if top_pct > 0.85:
+            leakage_warnings.append(
+                f"High Importance Anomaly: Feature '{features_ranked[0]['feature']}' accounts for "
+                f"{top_pct * 100:.1f}% of total model SHAP importance."
+            )
 
     return {
         "dataset_name": dataset_record["filename"],
         "target_column": target_column,
         "task_type": task,
-        "model_name": "Random Forest Baseline",
+        "model_name": model_name,
+        "model_family": model_family_norm,
         "train_samples": len(X_train),
         "test_samples": len(X_test),
         "features_count": X_clean.shape[1],
         "diagnostics": diagnostics,
         "feature_importances": features_ranked[:12],
+        "shap": {
+            "summary": summary_plot_data,
+            "waterfall": waterfall_data,
+        },
         "leakage_warnings": leakage_warnings,
     }
 
@@ -474,18 +667,21 @@ async def run_eda_profile_task(
     # Correlation matrix
     corr_data: Dict[str, Any] = {}
     if len(numeric_cols) >= 2:
-        corr_matrix = pdf[numeric_cols].corr()
-        corr_data = {
-            "columns": numeric_cols,
-            "matrix": [
-                [round(v, 3) if not math.isnan(v) else None for v in row]
-                for row in corr_matrix.values.tolist()
-            ],
-        }
+        num_df = pd.DataFrame(pdf[numeric_cols])
+        corr_matrix = num_df.corr()
+        if isinstance(corr_matrix, pd.DataFrame):
+            corr_data = {
+                "columns": numeric_cols,
+                "matrix": [
+                    [round(float(v), 3) if not math.isnan(float(v)) else None for v in row]
+                    for row in corr_matrix.to_numpy().tolist()
+                ],
+            }
 
     # Pairplot sample (at most 5 cols, 200 rows)
     pairplot_cols = numeric_cols[:5]
-    pairplot_sample = pdf[pairplot_cols].dropna().head(200).to_dict(orient="list")
+    pairplot_df = pd.DataFrame(pdf[pairplot_cols]).dropna().head(200)
+    pairplot_sample = pairplot_df.to_dict(orient="list")
 
     # Per-column distribution skewness
     skewness = {}
@@ -497,15 +693,17 @@ async def run_eda_profile_task(
     # Multicollinearity (VIF approximation using correlation)
     multicollinearity_flags = []
     if len(numeric_cols) >= 2:
-        corr_matrix = pdf[numeric_cols].corr().abs()
-        for i, col_a in enumerate(numeric_cols):
-            for j, col_b in enumerate(numeric_cols):
-                if i < j and corr_matrix.iloc[i, j] > 0.9:
-                    multicollinearity_flags.append({
-                        "col_a": col_a,
-                        "col_b": col_b,
-                        "correlation": round(float(corr_matrix.iloc[i, j]), 3),
-                    })
+        num_df = pd.DataFrame(pdf[numeric_cols])
+        corr_abs_df = num_df.corr().abs()
+        if isinstance(corr_abs_df, pd.DataFrame):
+            for i, col_a in enumerate(numeric_cols):
+                for j, col_b in enumerate(numeric_cols):
+                    if i < j and float(corr_abs_df.iloc[i, j]) > 0.9:
+                        multicollinearity_flags.append({
+                            "col_a": col_a,
+                            "col_b": col_b,
+                            "correlation": round(float(corr_abs_df.iloc[i, j]), 3),
+                        })
 
     return {
         "dataset_id": dataset_record.get("id") or dataset_record.get("content_hash"),

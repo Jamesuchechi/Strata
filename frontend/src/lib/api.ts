@@ -240,7 +240,22 @@ export async function trainAutoMLModel(payload: {
     const err = await response.json().catch(() => ({ detail: "AutoML training failed" }));
     throw new Error(err.detail || `AutoML training failed (${response.status})`);
   }
-  return response.json();
+  const data = await response.json();
+  if (data.status === "queued" && data.job_id) {
+    const maxPolls = 60; // 30s
+    for (let i = 0; i < maxPolls; i++) {
+      await new Promise((r) => setTimeout(r, 500));
+      const job = await fetchJobStatus(data.job_id);
+      if (job.status === "complete") {
+        return job.result;
+      }
+      if (job.status === "failed") {
+        throw new Error(job.error || "AutoML background training job failed");
+      }
+    }
+    throw new Error("AutoML training timed out waiting for worker result");
+  }
+  return data;
 }
 
 export async function convertDatasetFormat(datasetId: string, targetFormat: string): Promise<Blob> {
@@ -668,6 +683,29 @@ export async function searchSemanticDatasets(params: {
 
   const res = await apiFetch(url.toString());
   if (!res.ok) throw new Error(`Failed to execute semantic search (${res.status})`);
+  return res.json();
+}
+
+export async function searchKeywordDatasets(params: {
+  q?: string;
+  column?: string;
+  domain?: string;
+  format?: string;
+  min_quality?: number;
+  min_rows?: number;
+  max_rows?: number;
+}): Promise<import("./types").SemanticSearchResponse> {
+  const url = new URL(`${API_BASE}/discovery/keyword-search`);
+  if (params.q) url.searchParams.set("q", params.q);
+  if (params.column) url.searchParams.set("column", params.column);
+  if (params.domain) url.searchParams.set("domain", params.domain);
+  if (params.format && params.format !== "all") url.searchParams.set("format", params.format);
+  if (params.min_quality !== undefined) url.searchParams.set("min_quality", params.min_quality.toString());
+  if (params.min_rows !== undefined) url.searchParams.set("min_rows", params.min_rows.toString());
+  if (params.max_rows !== undefined) url.searchParams.set("max_rows", params.max_rows.toString());
+
+  const res = await apiFetch(url.toString());
+  if (!res.ok) throw new Error(`Failed to execute keyword search (${res.status})`);
   return res.json();
 }
 

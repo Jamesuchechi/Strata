@@ -1,85 +1,107 @@
-"""Geospatial vector format parser (GeoJSON)."""
+"""Geospatial vector format parser (GeoJSON, Shapefile, GeoPackage) using GeoPandas and Shapely."""
 
 import json
 from typing import Any, Dict, List
 import pyarrow as pa
+import geopandas as gpd
+import shapely.geometry
 from strata_api.parsers.base import BaseParser
 
 
 class GeospatialParser(BaseParser):
-    """Parser for geospatial layers (GeoJSON)."""
+    """Parser for geospatial layers (GeoJSON, Shapefiles, GeoPackage) via GeoPandas and Shapely."""
 
     def parse_preview(self, file_path: str, limit: int = 200) -> Dict[str, Any]:
-        """Parse GeoJSON feature collection and extract feature properties, coordinates, and bounding box."""
-        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-            data = json.load(f)
+        """Parse geospatial vector layers with CRS validation, boundary calculation, and geometry validation."""
+        gdf = gpd.read_file(file_path)
 
-        features = data.get("features", [])
-        if not features and data.get("type") in ("Feature", "Point", "Polygon"):
-            features = [data]
+        total_features = len(gdf)
+        crs_str = gdf.crs.to_string() if gdf.crs else "EPSG:4326"
 
-        rows = []
-        schema_fields = set()
-        geometries: List[Dict[str, Any]] = []
+        # Check geometry validity with Shapely
+        has_geometry = hasattr(gdf, "geometry") and gdf.geometry is not None and not gdf.empty
+        valid_count = int(gdf.geometry.is_valid.sum()) if has_geometry else 0
+        empty_count = int(gdf.geometry.is_empty.sum()) if has_geometry else 0
 
-        min_lon, min_lat = 180.0, 90.0
-        max_lon, max_lat = -180.0, -90.0
-        total_points = 0
+        # Calculate bounding box
+        if not gdf.empty and hasattr(gdf, "total_bounds") and gdf.total_bounds is not None:
+            tb = gdf.total_bounds
+            bounds = [round(float(tb[0]), 6), round(float(tb[1]), 6), round(float(tb[2]), 6), round(float(tb[3]), 6)]
+        else:
+            bounds = [-180.0, -90.0, 180.0, 90.0]
 
-        for idx, feat in enumerate(features[:limit]):
-            props = feat.get("properties", {}) or {}
-            geom = feat.get("geometry") or {}
-            geom_type = geom.get("type", "Unknown")
-            coords = geom.get("coordinates", [])
+        center_lon = round((bounds[0] + bounds[2]) / 2.0, 6)
+        center_lat = round((bounds[1] + bounds[3]) / 2.0, 6)
 
-            # Flatten coordinates to compute bounding box
-            def update_bounds(c):
-                nonlocal min_lon, min_lat, max_lon, max_lat, total_points
-                if isinstance(c, (list, tuple)) and len(c) >= 2 and isinstance(c[0], (int, float)):
-                    lon, lat = float(c[0]), float(c[1])
-                    min_lon = min(min_lon, lon)
-                    max_lon = max(max_lon, lon)
-                    min_lat = min(min_lat, lat)
-                    max_lat = max(max_lat, lat)
-                    total_points += 1
-                elif isinstance(c, (list, tuple)):
-                    for sub in c:
-                        update_bounds(sub)
+        # Geometry breakdown
+        geom_type_counts = {}
+        if hasattr(gdf, "geom_type") and gdf.geom_type is not None:
+            for gt, cnt in gdf.geom_type.value_counts().items():
+                geom_type_counts[str(gt)] = int(cnt)
 
-            update_bounds(coords)
+        sample_geometries: List[Dict[str, Any]] = []
+        preview_rows: List[Dict[str, Any]] = []
+        schema_fields = set(["feature_id", "geom_type", "geom_wkt", "is_valid"])
 
-            row = {
-                "feature_id": idx + 1,
+        subset = gdf.head(limit)
+        for idx, row in subset.iterrows():
+            geom = row.geometry if hasattr(row, "geometry") else None
+            geom_type = geom.geom_type if geom is not None else "Unknown"
+            is_valid = bool(geom.is_valid) if geom is not None else False
+            wkt_str = geom.wkt[:100] + ("..." if len(geom.wkt) > 100 else "") if geom is not None else ""
+
+            # Extract properties (excluding geometry column)
+            props: Dict[str, Any] = {}
+            for col_name, val in row.items():
+                col_key = str(col_name)
+                if col_key == "geometry":
+                    continue
+                if hasattr(val, "isoformat"):
+                    props[col_key] = val.isoformat()
+                elif isinstance(val, (int, float, bool, str)) or val is None:
+                    props[col_key] = val
+                else:
+                    props[col_key] = str(val)
+
+            row_dict = {
+                "feature_id": int(idx) + 1 if isinstance(idx, (int, float)) else str(idx),
                 "geom_type": geom_type,
+                "geom_wkt": wkt_str,
+                "is_valid": is_valid,
                 **props,
             }
-            schema_fields.update(row.keys())
-            rows.append(row)
+            schema_fields.update(row_dict.keys())
+            preview_rows.append(row_dict)
 
-            if len(geometries) < 50:
-                geometries.append({
-                    "id": idx + 1,
+            if len(sample_geometries) < 50:
+                geom_mapping = shapely.geometry.mapping(geom) if geom is not None and not geom.is_empty else None
+                sample_geometries.append({
+                    "id": row_dict["feature_id"],
                     "type": geom_type,
-                    "coordinates": coords,
+                    "is_valid": is_valid,
+                    "coordinates": geom_mapping.get("coordinates") if geom_mapping else [],
                     "properties": props,
                 })
 
-        schema = [{"name": field, "type": "string" if field != "feature_id" else "int64"} for field in sorted(schema_fields)]
-
-        center_lat = (min_lat + max_lat) / 2 if total_points > 0 else 0.0
-        center_lon = (min_lon + max_lon) / 2 if total_points > 0 else 0.0
+        schema = [
+            {"name": field, "type": "int64" if field == "feature_id" else ("bool" if field == "is_valid" else "string")}
+            for field in sorted(schema_fields)
+        ]
 
         return {
             "format": "geojson",
-            "type": data.get("type", "FeatureCollection"),
             "schema": schema,
-            "total_rows": len(features),
+            "total_rows": total_features,
             "total_columns": len(schema),
-            "preview_rows": rows,
+            "preview_rows": preview_rows,
             "geo_metadata": {
-                "bounds": [min_lon, min_lat, max_lon, max_lat] if total_points > 0 else [-180, -90, 180, 90],
+                "crs": crs_str,
+                "bounds": bounds,
                 "center": [center_lon, center_lat],
-                "sample_geometries": geometries,
+                "valid_geometries_count": valid_count,
+                "empty_geometries_count": empty_count,
+                "geom_type_counts": geom_type_counts,
+                "sample_geometries": sample_geometries,
             },
         }
 

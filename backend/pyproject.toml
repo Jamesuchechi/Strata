@@ -26,8 +26,15 @@ dependencies = [
     "redis>=5.0.0",
     "scikit-learn>=1.9.1",
     "scipy>=1.18.1",
+    "lightgbm>=4.5.0",
+    "xgboost>=2.1.0",
+    "shap>=0.46.0",
     "sqlalchemy>=2.0.36",
     "uvicorn[standard]>=0.32.0",
+    "pgvector>=0.5.0",
+    "rdkit>=2026.3.6",
+    "geopandas>=1.2.0",
+    "shapely>=2.1.2",
 ]
 
 [project.scripts]
@@ -52,5 +59,7 @@ pythonpath = ["src", "."]
 testpaths = ["tests"]
 
 [tool.pyright]
+venvPath = "."
+venv = ".venv"
 extraPaths = [".", "src"]
 

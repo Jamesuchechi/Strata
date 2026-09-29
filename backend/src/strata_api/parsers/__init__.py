@@ -9,12 +9,12 @@ from strata_api.parsers.geospatial import GeospatialParser
 
 def get_parser_for_file(file_path: str) -> BaseParser:
     """Return appropriate parser based on file extension."""
-    lower = file_path.lower()
+    lower = (file_path or "").lower()
     if lower.endswith((".xlsx", ".xls")):
         return ExcelParser()
     elif lower.endswith((".sdf", ".mol", ".fasta")):
         return ScientificParser()
-    elif lower.endswith((".geojson", ".json")) and "geo" in lower:
+    elif lower.endswith((".geojson", ".shp", ".gpkg")) or (lower.endswith(".json") and "geo" in lower):
         return GeospatialParser()
     else:
         return TabularParser()

@@ -82,10 +82,11 @@ class DailyLLMQuotaManager:
         self,
         user_id: Optional[str] = None,
         workspace_id: Optional[str] = None,
-        plan_tier: str = "free",
+        plan_tier: Optional[str] = "free",
     ) -> Dict[str, Any]:
         """Fetch current call count, limit, and reset timestamp for a user/workspace."""
-        limit = self.get_tier_cap(plan_tier)
+        tier = (plan_tier or "free").lower()
+        limit = self.get_tier_cap(tier)
         resets_at = self.get_resets_at_iso()
         today = self._get_date_utc()
 
@@ -95,7 +96,7 @@ class DailyLLMQuotaManager:
                 query = select(LLMUsageModel).where(
                     LLMUsageModel.date == today,
                 )
-                if plan_tier.lower() == "team" and workspace_id:
+                if tier == "team" and workspace_id:
                     query = query.where(LLMUsageModel.workspace_id == workspace_id)
                 elif user_id:
                     query = query.where(LLMUsageModel.user_id == user_id)
@@ -114,17 +115,18 @@ class DailyLLMQuotaManager:
             "limit": limit,
             "remaining": max(0, limit - used),
             "resets_at": resets_at,
-            "plan_tier": plan_tier,
+            "plan_tier": tier,
         }
 
     async def check_quota(
         self,
         user_id: Optional[str] = None,
         workspace_id: Optional[str] = None,
-        plan_tier: str = "free",
+        plan_tier: Optional[str] = "free",
     ) -> None:
         """Check if current user/workspace is within quota. Raises HTTP 429 if exceeded."""
-        usage_info = await self.get_usage_and_limit(user_id, workspace_id, plan_tier)
+        tier = (plan_tier or "free").lower()
+        usage_info = await self.get_usage_and_limit(user_id, workspace_id, tier)
         if usage_info["used"] >= usage_info["limit"]:
             logger.warning(
                 "Daily LLM quota exceeded for user=%s, workspace=%s (used=%d, limit=%d)",
@@ -137,7 +139,7 @@ class DailyLLMQuotaManager:
                 status_code=429,
                 detail={
                     "error": "Daily AI query limit exceeded",
-                    "message": f"You have reached your daily quota of {usage_info['limit']} AI queries for the {plan_tier.upper()} plan.",
+                    "message": f"You have reached your daily quota of {usage_info['limit']} AI queries for the {tier.upper()} plan.",
                     "used": usage_info["used"],
                     "limit": usage_info["limit"],
                     "resets_at": usage_info["resets_at"],
@@ -149,12 +151,13 @@ class DailyLLMQuotaManager:
         self,
         user_id: Optional[str] = None,
         workspace_id: Optional[str] = None,
-        plan_tier: str = "free",
+        plan_tier: Optional[str] = "free",
     ) -> int:
         """Atomically increment the call counter for today in the database."""
         today = self._get_date_utc()
-        target_uid = user_id if (plan_tier.lower() != "team" or not workspace_id) else None
-        target_wsid = workspace_id if plan_tier.lower() == "team" else None
+        tier = (plan_tier or "free").lower()
+        target_uid = user_id if (tier != "team" or not workspace_id) else None
+        target_wsid = workspace_id if tier == "team" else None
 
         new_count = 1
         try:
@@ -172,7 +175,7 @@ class DailyLLMQuotaManager:
 
                 if record:
                     record.call_count += 1
-                    new_count = record.call_count
+                    new_count = int(record.call_count)
                 else:
                     record = LLMUsageModel(
                         user_id=target_uid,
@@ -185,7 +188,7 @@ class DailyLLMQuotaManager:
 
                 await session.commit()
                 logger.info("Recorded LLM usage: user=%s, count=%d for date=%s", target_uid, new_count, today)
-                return new_count
+                return int(new_count)
         except Exception as e:
             logger.debug("Database error recording LLM call, fallback to in-memory: %s", e)
             mem_key = f"{user_id or workspace_id or 'anon'}:{today}"

@@ -6,6 +6,7 @@ showcase items are persistently stored in Postgres / SQLite.
 """
 
 import json
+import os
 from typing import Any, Dict, List, Optional
 from sqlalchemy import create_engine, select, delete
 from sqlalchemy.orm import sessionmaker
@@ -24,7 +25,7 @@ from strata_api.models.collaboration import (
     DatasetCommentModel,
     ReviewRequestModel,
 )
-from strata_api.models.discovery import UserFavoriteModel, UserRecentModel
+from strata_api.models.discovery import UserFavoriteModel, UserRecentModel, DatasetEmbeddingModel
 from strata_api.models.lineage import MLModelModel
 from strata_api.models.pipeline import PipelineModel, PipelineRunModel, DeadLetterJobModel
 from strata_api.models.versioning import CommitModel, BranchModel
@@ -334,6 +335,43 @@ def save_user_recent_to_db(user_id: str, dataset_id: str, viewed_at: str) -> Non
         session.commit()
 
 
+def save_dataset_embedding_to_db(record: Dict[str, Any]) -> None:
+    """Upsert dataset embedding record into database."""
+    with SyncSessionLocal() as session:
+        dataset_id = record["dataset_id"]
+        emb_id = record.get("id") or f"emb_{dataset_id}"
+        existing = session.scalars(
+            select(DatasetEmbeddingModel).where(DatasetEmbeddingModel.dataset_id == dataset_id)
+        ).first()
+        if existing:
+            existing.embedding = record["embedding"]
+            existing.corpus_text = record.get("corpus_text")
+            existing.model_name = record.get("model_name", "mistral-embed")
+            existing.updated_at = record.get("updated_at", "")
+        else:
+            session.add(DatasetEmbeddingModel(
+                id=emb_id,
+                dataset_id=dataset_id,
+                embedding=record["embedding"],
+                corpus_text=record.get("corpus_text"),
+                model_name=record.get("model_name", "mistral-embed"),
+                updated_at=record.get("updated_at", ""),
+            ))
+        session.commit()
+
+
+def delete_dataset_embedding_from_db(dataset_id: str) -> None:
+    """Delete dataset embedding from database."""
+    with SyncSessionLocal() as session:
+        existing = session.scalars(
+            select(DatasetEmbeddingModel).where(DatasetEmbeddingModel.dataset_id == dataset_id)
+        ).first()
+        if existing:
+            session.delete(existing)
+            session.commit()
+
+
+
 def save_ml_model_to_db(model: Dict[str, Any]) -> None:
     """Upsert registered ML model checkpoint to database."""
     with SyncSessionLocal() as session:
@@ -425,9 +463,9 @@ def save_dead_letter_job_to_db(job: Dict[str, Any]) -> None:
     job_id = job.get("id") or job.get("job_id") or job.get("dlq_id")
     with SyncSessionLocal() as session:
         existing = session.get(DeadLetterJobModel, job_id)
-        status = "resolved" if job.get("resolved") else job.get("status", "quarantined")
+        status: str = "resolved" if job.get("resolved") else str(job.get("status", "quarantined"))
         if existing:
-            existing.retry_count = job.get("retry_count", existing.retry_count)
+            existing.retry_count = int(job.get("retry_count", existing.retry_count))
             existing.status = status
         else:
             session.add(DeadLetterJobModel(
@@ -594,7 +632,6 @@ def load_all_from_db() -> None:
         # 1. Datasets
         duckdb_engine = None
         try:
-            import os
             from strata_api.core.duckdb_engine import get_duckdb_engine
             duckdb_engine = get_duckdb_engine()
         except Exception:
@@ -651,13 +688,15 @@ def load_all_from_db() -> None:
             if not any(r["id"] == rev.id for r in collaboration._review_requests_db):
                 collaboration._review_requests_db.append(rev.to_dict())
 
-        # 6. Discovery (Favorites & Recents)
+        # 6. Discovery (Favorites, Recents, and Semantic Embeddings)
         for fav in session.scalars(select(UserFavoriteModel)).all():
             discovery._user_favorites[fav.user_id].add(fav.dataset_id)
         for rec in session.scalars(select(UserRecentModel)).all():
             user_list = discovery._user_recents[rec.user_id]
             if not any(r.get("dataset_id") == rec.dataset_id for r in user_list):
                 user_list.append({"dataset_id": rec.dataset_id, "viewed_at": rec.viewed_at})
+        for emb in session.scalars(select(DatasetEmbeddingModel)).all():
+            discovery._dataset_embeddings[emb.dataset_id] = emb.to_dict()
 
         # 7. Lineage ML Models
         for mod in session.scalars(select(MLModelModel)).all():

@@ -290,4 +290,81 @@ async def run_statistical_hypothesis_test(
             "takeaway": takeaway,
         }
 
+    elif req.test_type in ("regression", "linear_regression"):
+        col2 = req.col2 or req.group_col
+        if not col2 or req.target_col not in pdf.columns or col2 not in pdf.columns:
+            raise HTTPException(status_code=400, detail="Target variable (Y) and predictor variable (X) required for linear regression")
+
+        clean_sub = pdf[[req.target_col, col2]].dropna()
+        if len(clean_sub) < 3:
+            raise HTTPException(status_code=400, detail="Insufficient observations for linear regression")
+
+        try:
+            y = clean_sub[req.target_col].astype(float)
+            x = clean_sub[col2].astype(float)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Both target and predictor columns must be numeric for linear regression")
+
+        res = stats.linregress(x, y)
+        is_sig = bool(res.pvalue < 0.05)
+        r2 = round(float(res.rvalue ** 2), 4)
+        takeaway = (
+            f"Linear regression shows a statistically significant relationship between '{col2}' and '{req.target_col}' "
+            f"(slope = {res.slope:.4f}, R² = {r2:.4f}, p = {res.pvalue:.4g}). "
+            f"For every 1-unit increase in '{col2}', '{req.target_col}' changes by approximately {res.slope:.4f} units."
+            if is_sig else
+            f"Linear regression reveals no statistically significant linear relationship between '{col2}' and '{req.target_col}' "
+            f"(slope = {res.slope:.4f}, R² = {r2:.4f}, p = {res.pvalue:.4g})."
+        )
+        return {
+            "test_name": "Ordinary Least Squares (OLS) Linear Regression",
+            "target_col": req.target_col,
+            "predictor_col": col2,
+            "slope": round(float(res.slope), 4),
+            "intercept": round(float(res.intercept), 4),
+            "r_value": round(float(res.rvalue), 4),
+            "r_squared": r2,
+            "statistic": round(float(res.slope), 4),
+            "p_value": float(res.pvalue),
+            "std_err": round(float(res.stderr), 6) if res.stderr is not None else 0.0,
+            "is_significant": is_sig,
+            "significance_level": "p < 0.05",
+            "takeaway": takeaway,
+        }
+
+    elif req.test_type == "paired_ttest":
+        col2 = req.col2 or req.group_col
+        if not col2 or req.target_col not in pdf.columns or col2 not in pdf.columns:
+            raise HTTPException(status_code=400, detail="Two paired numeric columns required for paired t-test")
+        clean_sub = pdf[[req.target_col, col2]].dropna()
+        if len(clean_sub) < 3:
+            raise HTTPException(status_code=400, detail="Insufficient paired observations for paired t-test")
+        try:
+            s1 = clean_sub[req.target_col].astype(float)
+            s2 = clean_sub[col2].astype(float)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Both paired columns must be numeric")
+
+        stat, p_val = stats.ttest_rel(s1, s2)
+        is_sig = bool(p_val < 0.05)
+        diff_mean = float((s1 - s2).mean())
+        takeaway = (
+            f"Paired t-test detects a statistically significant difference between paired measures '{req.target_col}' and '{col2}' "
+            f"(statistic = {stat:.2f}, mean paired difference = {diff_mean:.2f}, p = {p_val:.4g})."
+            if is_sig else
+            f"Paired t-test indicates no statistically significant difference between paired measures '{req.target_col}' and '{col2}' "
+            f"(statistic = {stat:.2f}, mean paired difference = {diff_mean:.2f}, p = {p_val:.4g})."
+        )
+        return {
+            "test_name": "Paired Samples t-test",
+            "target_col": req.target_col,
+            "paired_col": col2,
+            "statistic": round(float(stat), 4),
+            "p_value": float(p_val),
+            "is_significant": is_sig,
+            "significance_level": "p < 0.05",
+            "takeaway": takeaway,
+            "mean_difference": round(diff_mean, 3),
+        }
+
     raise HTTPException(status_code=400, detail=f"Unsupported test type '{req.test_type}'.")

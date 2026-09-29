@@ -75,6 +75,11 @@ async def train_baseline_model(
         task_type=req.task_type or "auto",
         model_family=req.model_family or "random_forest",
     )
+    if job is None:
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to enqueue AutoML training job in Redis queue.",
+        )
 
     return {
         "status": "queued",
@@ -86,5 +91,5 @@ async def train_baseline_model(
         "dataset_name": record["filename"],
         "target_column": req.target_column,
         "task_type": req.task_type,
-        "model_family": req.model_family,
+        "model_family": req.model_family or "random_forest",
     }
