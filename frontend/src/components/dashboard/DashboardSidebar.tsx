@@ -26,6 +26,7 @@ import {
   Building2,
   CreditCard,
   Globe,
+  Network,
 } from "lucide-react";
 import { fetchDatasets } from "@/lib/api";
 import { DatasetItem } from "@/lib/types";
@@ -144,6 +145,13 @@ export function DashboardSidebar({
       label: "Pipelines & Compute",
       icon: <Cpu className="w-4 h-4 text-rose-600" />,
       matches: (path: string) => path.startsWith("/pipelines"),
+    },
+    {
+      id: "integrations",
+      href: "/integrations",
+      label: "Integrations & Hub",
+      icon: <Network className="w-4 h-4 text-teal-600" />,
+      matches: (path: string) => path.startsWith("/integrations"),
     },
     {
       id: "billing",

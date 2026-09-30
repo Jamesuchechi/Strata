@@ -697,6 +697,69 @@ export interface ReviewRequest {
   min_approvals_required: number;
   created_at: string;
 }
+export interface DatabaseConnection {
+  id: string;
+  name: string;
+  db_type: "postgres" | "mysql" | "snowflake" | "bigquery" | "clickhouse" | "sqlite" | "s3" | "gcs";
+  host?: string;
+  port?: number;
+  database?: string;
+  username?: string;
+  status: "connected" | "configured" | "ready" | "error";
+  created_at: string;
+}
 
+export interface WebhookConfig {
+  id: string;
+  service: "slack" | "discord" | "teams" | "generic";
+  name: string;
+  url: string;
+  events: string[];
+  is_active: boolean;
+}
 
+export interface IntegrationEvent {
+  id: string;
+  webhook_id?: string;
+  service: string;
+  event_type: string;
+  payload: Record<string, any>;
+  status: "delivered" | "failed";
+  status_code: number;
+  response_body?: string;
+  timestamp: string;
+}
 
+export interface HypothesisTestRequest {
+  test_type: "ttest" | "anova" | "chi2" | "regression" | "paired_ttest" | "mannwhitney";
+  target_col: string;
+  group_col?: string;
+  col2?: string;
+}
+
+export interface HypothesisTestResult {
+  test_name: string;
+  target_col: string;
+  group_col?: string;
+  col2?: string;
+  paired_col?: string;
+  predictor_col?: string;
+  statistic: number;
+  p_value: number;
+  is_significant: boolean;
+  significance_level?: string;
+  takeaway: string;
+  degrees_of_freedom?: number;
+  r_squared?: number;
+  slope?: number;
+  intercept?: number;
+  std_err?: number;
+  mean_difference?: number;
+  group_summaries?: Array<{
+    group: string;
+    count: number;
+    mean: number;
+    std: number;
+  }>;
+  groups_tested?: number;
+}

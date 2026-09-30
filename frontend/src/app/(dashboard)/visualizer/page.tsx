@@ -16,6 +16,7 @@ import {
 import { fetchDatasets, fetchDatasetPreview } from "@/lib/api";
 import { DatasetItem, PreviewData } from "@/lib/types";
 import { VisualChartStudio } from "@/components/studio/VisualChartStudio";
+import { HypothesisTestingModal } from "@/components/analytics/HypothesisTestingModal";
 
 export default function VisualizerPage() {
   return (
@@ -41,6 +42,7 @@ function VisualizerContent() {
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isHypothesisOpen, setIsHypothesisOpen] = useState(false);
 
   // 1. Load datasets list
   useEffect(() => {
@@ -149,6 +151,15 @@ function VisualizerContent() {
                 <Code2 className="w-3.5 h-3.5 text-amber-600" />
                 <span className="hidden md:inline">SQL</span>
               </Link>
+
+              <button
+                type="button"
+                onClick={() => setIsHypothesisOpen(true)}
+                className="px-3 py-1.5 rounded-xl border border-purple-200 bg-purple-50 hover:bg-purple-100 text-xs font-semibold text-purple-700 flex items-center gap-1.5 transition-colors shadow-2xs"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-purple-600" />
+                <span className="hidden sm:inline">Hypothesis Testing</span>
+              </button>
             </>
           )}
         </div>
@@ -198,6 +209,17 @@ function VisualizerContent() {
           />
         ) : null}
       </div>
+
+      {/* Statistical Hypothesis Testing Modal */}
+      {previewData && (
+        <HypothesisTestingModal
+          isOpen={isHypothesisOpen}
+          onClose={() => setIsHypothesisOpen(false)}
+          datasetId={selectedDatasetId}
+          datasetName={previewData.filename}
+          schemaFields={previewData.schema_fields}
+        />
+      )}
     </div>
   );
 }

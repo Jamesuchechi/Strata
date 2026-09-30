@@ -203,20 +203,25 @@ export async function fetchDeepEDA(datasetId: string): Promise<any> {
 
 export async function runHypothesisTest(
   datasetId: string,
-  testType: string,
-  targetCol: string,
+  testTypeOrPayload: string | { test_type: string; target_col: string; group_col?: string; col2?: string },
+  targetCol?: string,
   groupCol?: string,
   col2?: string
 ): Promise<any> {
+  const payload =
+    typeof testTypeOrPayload === "object"
+      ? testTypeOrPayload
+      : {
+          test_type: testTypeOrPayload,
+          target_col: targetCol!,
+          group_col: groupCol,
+          col2: col2,
+        };
+
   const response = await apiFetch(`${API_BASE}/eda/${datasetId}/hypothesis-test`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      test_type: testType,
-      target_col: targetCol,
-      group_col: groupCol,
-      col2: col2,
-    }),
+    body: JSON.stringify(payload),
   });
   if (!response.ok) {
     const err = await response.json().catch(() => ({ detail: "Hypothesis test failed" }));
@@ -1049,7 +1054,172 @@ export async function approveReviewRequest(reviewId: string): Promise<any> {
   return res.json();
 }
 
+export async function importDatasetFromUrl(
+  url: string,
+  name?: string,
+  authHeader?: string,
+  formatOverride?: string
+): Promise<PreviewData> {
+  const res = await apiFetch(`${API_BASE}/datasets/import-url`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      url,
+      name: name || undefined,
+      auth_header: authHeader || undefined,
+      format_override: formatOverride || undefined,
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Failed to import dataset from URL (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function importDatasetFromDatabase(payload: {
+  connection_uri: string;
+  query: string;
+  name?: string;
+  limit?: number;
+}): Promise<PreviewData> {
+  const res = await apiFetch(`${API_BASE}/datasets/import-database`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Database query extraction failed (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function importSampleDataset(sampleId: string): Promise<PreviewData> {
+  const res = await apiFetch(`${API_BASE}/datasets/import-sample`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sample_id: sampleId }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Failed to instantiate benchmark dataset (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function fetchDatabaseConnections(): Promise<{ connections: import("./types").DatabaseConnection[] }> {
+  const res = await apiFetch(`${API_BASE}/integrations/connections`);
+  if (!res.ok) throw new Error(`Failed to fetch database connections (${res.status})`);
+  return res.json();
+}
+
+export async function saveDatabaseConnection(conn: {
+  name: string;
+  db_type: string;
+  host?: string;
+  port?: number;
+  database?: string;
+  username?: string;
+  password?: string;
+  connection_uri?: string;
+}): Promise<any> {
+  const res = await apiFetch(`${API_BASE}/integrations/connections`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(conn),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Failed to save database connection (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function deleteDatabaseConnection(connId: string): Promise<any> {
+  const res = await apiFetch(`${API_BASE}/integrations/connections/${encodeURIComponent(connId)}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) throw new Error(`Failed to delete database connection (${res.status})`);
+  return res.json();
+}
+
+export async function testDatabaseConnection(payload: {
+  db_type: string;
+  host?: string;
+  port?: number;
+  database?: string;
+  username?: string;
+  password?: string;
+  connection_uri?: string;
+}): Promise<{
+  success: boolean;
+  status: string;
+  latency_ms: number;
+  message: string;
+  tables_discovered?: string[];
+}> {
+  const res = await apiFetch(`${API_BASE}/integrations/test-db`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Connection test failed (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function createWebhook(req: {
+  service: string;
+  name: string;
+  url: string;
+  events?: string[];
+  is_active?: boolean;
+}): Promise<any> {
+  const res = await apiFetch(`${API_BASE}/integrations/webhooks`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(req),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Failed to create webhook (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function deleteWebhook(webhookId: string): Promise<any> {
+  const res = await apiFetch(`${API_BASE}/integrations/webhooks/${encodeURIComponent(webhookId)}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) throw new Error(`Failed to delete webhook (${res.status})`);
+  return res.json();
+}
+
+export async function syncMLflow(req: {
+  mlflow_tracking_uri: string;
+  experiment_name: string;
+  model_name: string;
+  dataset_name: string;
+  version_hash: string;
+  metrics?: Record<string, number>;
+}): Promise<any> {
+  const res = await apiFetch(`${API_BASE}/integrations/sync/mlflow`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(req),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `MLflow sync failed (${res.status})`);
+  }
+  return res.json();
+}
+
 export * from "./api/auth";
+
 
 
 

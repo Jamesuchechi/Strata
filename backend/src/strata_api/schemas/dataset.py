@@ -59,3 +59,22 @@ class ShareResponse(BaseModel):
     share_url: str
     created_at: str
     dataset_name: str
+
+
+class UrlImportRequest(BaseModel):
+    url: str
+    name: Optional[str] = None
+    auth_header: Optional[str] = None
+    format_override: Optional[str] = None
+
+
+class DatabaseImportRequest(BaseModel):
+    connection_uri: str
+    query: str
+    name: Optional[str] = None
+    limit: Optional[int] = 50000
+
+
+class SampleImportRequest(BaseModel):
+    sample_id: str
+
