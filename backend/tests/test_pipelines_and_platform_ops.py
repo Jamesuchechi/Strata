@@ -3,8 +3,11 @@ Pillars 7, 9, 12, 13, 16, 17
 """
 
 import pytest
+import httpx
 from unittest.mock import AsyncMock, patch
 from httpx import AsyncClient, ASGITransport
+
+_RealAsyncClient = httpx.AsyncClient
 from strata_api.main import create_app
 from strata_api.routers.datasets import seed_default_datasets_if_needed
 from tests.conftest import AUTH_HEADERS_A
@@ -146,26 +149,38 @@ async def test_integrations_connectors_and_code():
         assert "jupyter_vscode" in tpls
         assert "mlflow" in tpls
 
-        # Webhook alert dispatch
-        wh_resp = await ac.post(
-            "/api/integrations/webhooks/test",
-            json={"service": "slack", "message": "Test Alert"}
-        )
-        assert wh_resp.status_code == 200
-        assert wh_resp.json()["status"] == "sent"
+        # Webhook alert dispatch (mocked live HTTP handler)
+        async def mock_handler(request: httpx.Request):
+            url = str(request.url)
+            if "experiments/get-by-name" in url:
+                return httpx.Response(200, json={"experiment": {"experiment_id": "exp_1"}})
+            elif "runs/create" in url:
+                return httpx.Response(200, json={"run": {"info": {"run_id": "run_1"}}})
+            elif "slack" in url or "discord" in url or "log-metric" in url or "log-parameter" in url or "update" in url:
+                return httpx.Response(200, text="ok", json={})
+            return httpx.Response(200, json={})
 
-        # MLflow sync
-        ml_resp = await ac.post(
-            "/api/integrations/sync/mlflow",
-            json={
-                "model_name": "churn_classifier",
-                "dataset_name": "customer_churn.csv",
-                "version_hash": "a1b2c3d4",
-                "metrics": {"auc": 0.93},
-            }
-        )
-        assert ml_resp.status_code == 200
-        assert ml_resp.json()["status"] == "synchronized"
+        mock_transport = httpx.MockTransport(mock_handler)
+        with patch("strata_api.routers.integrations.httpx.AsyncClient", side_effect=lambda *a, **kw: _RealAsyncClient(transport=mock_transport, **{k: v for k, v in kw.items() if k != "transport"})):
+            wh_resp = await ac.post(
+                "/api/integrations/webhooks/test",
+                json={"service": "slack", "message": "Test Alert", "webhook_url": "https://hooks.slack.com/services/test"}
+            )
+            assert wh_resp.status_code == 200
+            assert wh_resp.json()["status"] == "sent"
+
+            # MLflow sync
+            ml_resp = await ac.post(
+                "/api/integrations/sync/mlflow",
+                json={
+                    "model_name": "churn_classifier",
+                    "dataset_name": "customer_churn.csv",
+                    "version_hash": "a1b2c3d4",
+                    "metrics": {"auc": 0.93},
+                }
+            )
+            assert ml_resp.status_code == 200
+            assert ml_resp.json()["status"] == "synchronized"
 
 
 @pytest.mark.asyncio
