@@ -316,3 +316,52 @@ async def test_admin_and_platform_ops():
             q_data = queue_resp.json()
             assert q_data["active_workers"] >= 1
             assert "dead_letter_count" in q_data
+
+
+@pytest.mark.asyncio
+async def test_pipeline_column_resolution_and_templates():
+    """Test that pipeline execution and templates handle datasets gracefully even when generic columns like 'amount' or 'value' are used."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test", headers=AUTH_HEADERS_A) as ac:
+        # Dry-run with generic placeholder condition 'amount > 0' on churn_demo (which has monthly_charges/total_spend, not amount)
+        dry_req = {
+            "dataset_id": "churn_demo",
+            "steps": [
+                {"step_id": "s1", "name": "Filter positive", "type": "filter", "condition": "amount > 0"},
+                {"step_id": "s2", "name": "Clip outliers", "type": "quantile_clip", "columns": ["value", "amount"]},
+            ],
+            "sample_rows_limit": 5,
+        }
+        dry_resp = await ac.post("/api/pipelines/dry-run", json=dry_req)
+        assert dry_resp.status_code == 200
+        dry_data = dry_resp.json()
+        assert dry_data["status"] == "success"
+        assert len(dry_data["dry_run"]["sample_preview"]) <= 5
+
+    # Direct task execution test in arq_worker
+    from strata_api.core.arq_worker import run_pipeline_task
+    from strata_api.routers.datasets import _datasets_db
+
+    churn_rec = _datasets_db.get("churn_demo")
+    assert churn_rec is not None
+
+    test_pipe = {
+        "id": "pipe_test_resolution",
+        "name": "Test Resolution Pipeline",
+        "steps": [
+            {"step_id": "s1", "name": "Filter positive", "type": "filter", "condition": "amount > 0"},
+            {"step_id": "s2", "name": "Clip outliers", "type": "quantile_clip", "columns": ["amount"]},
+        ],
+        "max_memory_mb": 256,
+        "timeout_seconds": 15,
+    }
+
+    result = await run_pipeline_task(
+        {},
+        pipeline=test_pipe,
+        dataset_record=churn_rec,
+        run_id="run_test_resolution_001",
+    )
+    assert result["status"] == "success"
+    assert result["output_rows"] > 0
+
