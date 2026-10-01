@@ -1,3 +1,4 @@
+import re
 from fastapi import APIRouter, Depends, HTTPException, Request
 from strata_api.core.duckdb_engine import get_duckdb_engine, validate_sql
 from strata_api.core.rate_limiter import check_query_rate_limit
@@ -9,6 +10,18 @@ from strata_api.routers.datasets import _datasets_db, check_dataset_access, find
 from strata_api.schemas.query import QueryRequest, QueryResponse
 
 router = APIRouter(prefix="/query", tags=["Query"])
+
+TABLE_REF_PATTERN = re.compile(r"\b(?:FROM|JOIN)\s+([a-zA-Z0-9_\"`]+)", re.IGNORECASE)
+
+
+def _extract_referenced_tables(sql: str) -> set[str]:
+    """Extract table/view identifiers from FROM and JOIN clauses."""
+    tables = set()
+    for match in TABLE_REF_PATTERN.finditer(sql):
+        raw = match.group(1).strip('"` ')
+        if raw:
+            tables.add(raw)
+    return tables
 
 
 @router.post("", response_model=QueryResponse)
@@ -35,12 +48,21 @@ async def execute_query(
         if ds:
             check_dataset_access(ds, current_user.id)
 
-    # Check dataset access if other users' views are referenced in raw SQL
+    # Check dataset access for any referenced tables or views in raw SQL
     if req.sql:
+        referenced_tables = _extract_referenced_tables(req.sql)
+        for tbl in referenced_tables:
+            ds = find_dataset_by_name_or_id(tbl)
+            if ds:
+                check_dataset_access(ds, current_user.id)
+
+        # Cross-reference against registered views
         for ds in _datasets_db.values():
             v_name = ds.get("view_name")
             d_id = ds.get("id")
-            if (v_name and v_name in req.sql) or (d_id and f"view_{d_id}" in req.sql):
+            if (v_name and (v_name in referenced_tables or v_name in req.sql)) or (
+                d_id and (f"view_{d_id}" in referenced_tables or f"view_{d_id}" in req.sql)
+            ):
                 check_dataset_access(ds, current_user.id)
 
     executor = QueryExecutor(engine)

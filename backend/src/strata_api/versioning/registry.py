@@ -31,7 +31,7 @@ def record_commit(
     parent_hash: Optional[str] = None,
     version_tag: str = "v1.0.0",
     message: str = "Dataset version commit",
-    author: str = "James Uchechi",
+    author: str = "System",
     delta_rows: str = "+0 rows",
     delta_columns: str = "+0 cols",
     added_cols: Optional[List[str]] = None,

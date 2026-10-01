@@ -39,6 +39,12 @@ async def test_validate_sql_unit_checks():
     with pytest.raises(ValueError, match="read_json|External filesystem"):
         validate_sql("SELECT * FROM read_json('/root/.bash_history')", engine.conn)
 
+    with pytest.raises(ValueError, match="Disallowed SQL function: duckdb_views"):
+        validate_sql("SELECT * FROM duckdb_views()", engine.conn)
+
+    with pytest.raises(ValueError, match="Disallowed SQL function: duckdb_tables"):
+        validate_sql("SELECT * FROM duckdb_tables()", engine.conn)
+
     # Disallowed keywords
     with pytest.raises(ValueError, match="Disallowed SQL keyword: INSTALL"):
         validate_sql("INSTALL httpfs", engine.conn)

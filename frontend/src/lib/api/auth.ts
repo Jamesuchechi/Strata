@@ -176,6 +176,27 @@ export async function requestMagicLink(email: string): Promise<{ status: string;
   return response.json();
 }
 
+export async function verifyMagicLink(token: string): Promise<AuthResponse> {
+  const response = await fetch(`${API_BASE}/auth/magic-link/verify`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ token }),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({ detail: "Magic link verification failed" }));
+    throw new Error(errorData.detail || `Verification failed with status ${response.status}`);
+  }
+
+  const data: AuthResponse = await response.json();
+  setStoredUser(data.user);
+  if (data.access_token) {
+    setStoredToken(data.access_token);
+  }
+  return data;
+}
+
 export async function requestPasswordReset(email: string): Promise<{ status: string; message: string }> {
   const response = await fetch(`${API_BASE}/auth/forgot-password`, {
     method: "POST",

@@ -67,7 +67,7 @@ class CreateCommitRequest(BaseModel):
     dataset_name: str
     message: str
     version_tag: Optional[str] = None
-    author: Optional[str] = "James Uchechi"
+    author: Optional[str] = None
     parent_hash: Optional[str] = None
     delta_rows: Optional[str] = "+0 rows"
     delta_columns: Optional[str] = "+0 cols"
@@ -97,13 +97,14 @@ async def create_snapshot_commit(
     # Generate content-addressed hash based on message, dataset_name, and timestamp
     h = hashlib.sha256(f"{req.dataset_name}_{req.message}_{req.version_tag}".encode()).hexdigest()
 
+    author_identity = req.author or current_user.full_name or current_user.email
     commit = record_commit(
         version_hash=h,
         dataset_name=req.dataset_name,
         parent_hash=req.parent_hash,
         version_tag=req.version_tag or "v1.1.0",
         message=req.message,
-        author=current_user.email,
+        author=author_identity,
         delta_rows=req.delta_rows or "+0 rows",
         delta_columns=req.delta_columns or "+0 cols",
         added_cols=req.added_cols,
@@ -166,7 +167,9 @@ async def add_tag(
     if not check_commit_access(target, current_user.id):
         raise HTTPException(status_code=403, detail="Forbidden: You do not have access to this commit")
 
-    c = add_tag_to_commit(commit_id, req.tag)
+    c = add_tag_to_commit(target["id"], req.tag)
+    if not c:
+        raise HTTPException(status_code=404, detail="Commit not found")
     return {"message": f"Tag '{req.tag}' added", "commit": c}
 
 
@@ -183,7 +186,9 @@ async def remove_tag(
     if not check_commit_access(target, current_user.id):
         raise HTTPException(status_code=403, detail="Forbidden: You do not have access to this commit")
 
-    c = remove_tag_from_commit(commit_id, tag)
+    c = remove_tag_from_commit(target["id"], tag)
+    if not c:
+        raise HTTPException(status_code=404, detail="Commit not found")
     return {"message": f"Tag '{tag}' removed", "commit": c}
 
 
@@ -200,7 +205,9 @@ async def pin_commit(
     if not check_commit_access(target, current_user.id):
         raise HTTPException(status_code=403, detail="Forbidden: You do not have access to this commit")
 
-    c = toggle_commit_pin(commit_id, req.is_pinned)
+    c = toggle_commit_pin(target["id"], req.is_pinned)
+    if not c:
+        raise HTTPException(status_code=404, detail="Commit not found")
     status_str = "pinned" if c.get("is_pinned") else "unpinned"
     return {"message": f"Commit {commit_id} is now {status_str}", "commit": c}
 
@@ -218,7 +225,9 @@ async def set_permissions(
     if not check_commit_access(target, current_user.id):
         raise HTTPException(status_code=403, detail="Forbidden: You do not have access to this commit")
 
-    c = update_commit_permissions(commit_id, req.access_level)
+    c = update_commit_permissions(target["id"], req.access_level)
+    if not c:
+        raise HTTPException(status_code=404, detail="Commit not found")
     return {"message": f"Access level set to '{c.get('access_level')}'", "commit": c}
 
 
@@ -235,7 +244,9 @@ async def update_metadata(
     if not check_commit_access(target, current_user.id):
         raise HTTPException(status_code=403, detail="Forbidden: You do not have access to this commit")
 
-    c = update_commit_metadata(commit_id, req.metadata)
+    c = update_commit_metadata(target["id"], req.metadata)
+    if not c:
+        raise HTTPException(status_code=404, detail="Commit not found")
     return {"message": "Custom metadata updated", "commit": c}
 
 
@@ -252,7 +263,9 @@ async def bump_semver(
     if not check_commit_access(target, current_user.id):
         raise HTTPException(status_code=403, detail="Forbidden: You do not have access to this commit")
 
-    c = bump_commit_semver(commit_id, req.bump_type)
+    c = bump_commit_semver(target["id"], req.bump_type)
+    if not c:
+        raise HTTPException(status_code=404, detail="Commit not found")
     return {"message": f"Bumped to {c.get('version')}", "commit": c}
 
 

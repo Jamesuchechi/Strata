@@ -51,7 +51,7 @@ def ensure_default_branches(dataset_name: str, head_commit_id: Optional[str] = N
             "is_default": False,
             "protected": False,
             "created_at": datetime.now(timezone.utc).isoformat(),
-            "created_by": "James Uchechi",
+            "created_by": "System",
             "description": "Pre-release experimental transformations and feature engineering",
             "ahead_count": 1,
             "behind_count": 0,
@@ -107,7 +107,7 @@ def create_branch(
     dataset_name: str,
     branch_name: str,
     from_commit_or_branch: Optional[str] = None,
-    author: str = "James Uchechi",
+    author: str = "System",
     description: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Create a new dataset branch from an existing branch or commit hash."""
@@ -380,7 +380,7 @@ def execute_merge(
     source_branch: str,
     strategy: str = "auto",  # "auto", "ours", "theirs", "union"
     resolutions: Optional[Dict[str, str]] = None,
-    author: str = "James Uchechi",
+    author: str = "System",
     message: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Execute merge between branches and record merge commit."""

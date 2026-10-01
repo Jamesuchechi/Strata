@@ -25,6 +25,11 @@ class MagicLinkRequest(BaseModel):
     email: str = Field(..., description="User registered email")
 
 
+class VerifyMagicLinkRequest(BaseModel):
+    """Payload for verifying a passwordless magic login link token."""
+    token: str = Field(..., description="One-time magic login link token")
+
+
 class ForgotPasswordRequest(BaseModel):
     """Payload for requesting a password reset link."""
     email: str = Field(..., description="User registered email")

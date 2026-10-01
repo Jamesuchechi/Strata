@@ -94,9 +94,34 @@ def test_magic_link_flow(client: TestClient):
     # Credentials / tokens must never appear in unauthenticated response
     assert "demo_link" not in data
     assert "token" not in data
-    # Token was dispatched via email service on the server side
+    # Retrieve dispatched token from server-side email service
     server_token = get_latest_token_for_email(email, "magic_link")
     assert server_token is not None
+
+    # Verify magic link token
+    verify_res = client.post(
+        "/api/auth/magic-link/verify",
+        json={"token": server_token},
+    )
+    assert verify_res.status_code == 200
+    verify_data = verify_res.json()
+    assert "access_token" in verify_data
+    assert verify_data["user"]["email"] == email
+
+    # Re-using the same magic token must fail (single-use)
+    reuse_res = client.post(
+        "/api/auth/magic-link/verify",
+        json={"token": server_token},
+    )
+    assert reuse_res.status_code == 401
+
+    # Fake or malformed token fails
+    bad_res = client.post(
+        "/api/auth/magic-link/verify",
+        json={"token": "invalid.magic.token"},
+    )
+    assert bad_res.status_code == 401
+
 
 
 def test_forgot_and_reset_password_flow(client: TestClient):

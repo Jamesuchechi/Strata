@@ -17,7 +17,7 @@ class CommitModel(Base):
     parent_hash: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     version_tag: Mapped[str] = mapped_column(String(32), default="v1.0.0", nullable=False)
     message: Mapped[str] = mapped_column(Text, nullable=False)
-    author: Mapped[str] = mapped_column(String(128), default="James Uchechi", nullable=False)
+    author: Mapped[str] = mapped_column(String(128), default="System", nullable=False)
     timestamp: Mapped[str] = mapped_column(String(64), nullable=False)
     delta_rows: Mapped[str] = mapped_column(String(64), default="+0 rows", nullable=False)
     delta_columns: Mapped[str] = mapped_column(String(64), default="+0 cols", nullable=False)

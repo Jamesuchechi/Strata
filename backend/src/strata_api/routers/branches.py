@@ -24,7 +24,7 @@ class CreateBranchRequest(BaseModel):
     branch_name: str = Field(..., description="Name for the new branch")
     from_commit_or_branch: Optional[str] = Field(None, description="Starting branch or commit hash")
     description: Optional[str] = Field(None, description="Purpose of this feature branch")
-    author: Optional[str] = Field("James Uchechi", description="Author creating the branch")
+    author: Optional[str] = Field(None, description="Author creating the branch")
 
 
 class CheckoutBranchRequest(BaseModel):
@@ -38,7 +38,7 @@ class MergeBranchRequest(BaseModel):
     source_branch: str
     strategy: str = Field("auto", description="Strategy: auto, ours, theirs, union")
     resolutions: Optional[Dict[str, str]] = Field(None, description="Manual per-column resolution map")
-    author: Optional[str] = "James Uchechi"
+    author: Optional[str] = Field(None, description="Author executing merge")
     message: Optional[str] = None
 
 
@@ -81,11 +81,12 @@ async def create_new_branch(
     if ds:
         check_dataset_access(ds, current_user.id)
     try:
+        author = req.author or current_user.full_name or current_user.email
         b = create_branch(
             dataset_name=req.dataset_name,
             branch_name=req.branch_name,
             from_commit_or_branch=req.from_commit_or_branch,
-            author=req.author or current_user.full_name,
+            author=author,
             description=req.description,
         )
         return {"message": f"Branch '{req.branch_name}' created successfully", "branch": b}
@@ -159,13 +160,14 @@ async def merge_branches(
     if ds:
         check_dataset_access(ds, current_user.id)
     try:
+        author = req.author or current_user.full_name or current_user.email
         result = execute_merge(
             dataset_name=req.dataset_name,
             target_branch=req.target_branch,
             source_branch=req.source_branch,
             strategy=req.strategy,
             resolutions=req.resolutions,
-            author=req.author or current_user.full_name,
+            author=author,
             message=req.message,
         )
         return result

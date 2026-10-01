@@ -266,7 +266,7 @@ class DatasetCommentRequest(BaseModel):
     row_index: Optional[int] = None
     column_name: Optional[str] = None
     comment: str
-    author_name: str = "James Uchechi"
+    author_name: Optional[str] = None
     author_role: str = "Owner"
 
 
@@ -275,7 +275,7 @@ class CreateReviewRequest(BaseModel):
     source_branch: str
     target_branch: str = "main"
     title: str
-    author: str = "James Uchechi"
+    author: Optional[str] = None
 
 
 class AssetTransferRequest(BaseModel):
@@ -305,12 +305,13 @@ async def add_dataset_comment(
     if ds:
         check_dataset_access(ds, current_user.id)
     comment_id = f"comment_{uuid.uuid4().hex[:8]}"
+    author = req.author_name or current_user.full_name or current_user.email
     item = {
         "id": comment_id,
         "dataset_id": dataset_id,
         "row_index": req.row_index,
         "column_name": req.column_name,
-        "author_name": req.author_name or current_user.full_name,
+        "author_name": author,
         "author_role": req.author_role,
         "comment": req.comment,
         "resolved": False,
@@ -366,13 +367,14 @@ async def create_review_request(
     if ds:
         check_dataset_access(ds, current_user.id)
     rev_id = f"rev_{uuid.uuid4().hex[:8]}"
+    author = req.author or current_user.full_name or current_user.email
     rev = {
         "id": rev_id,
         "dataset_name": req.dataset_name,
         "source_branch": req.source_branch,
         "target_branch": req.target_branch,
         "title": req.title,
-        "author": req.author or current_user.full_name,
+        "author": author,
         "status": "pending_review",
         "approvals": [],
         "min_approvals_required": 1,
@@ -386,7 +388,7 @@ async def create_review_request(
 @router.post("/reviews/{review_id}/approve")
 async def approve_review_request(
     review_id: str,
-    approver_name: str = "James Uchechi",
+    approver_name: Optional[str] = None,
     current_user: UserModel = Depends(get_current_user),
 ):
     """Approve a dataset version pull request (Pillar 9.7)."""
@@ -398,7 +400,7 @@ async def approve_review_request(
     if ds:
         check_dataset_access(ds, current_user.id)
 
-    name = approver_name or current_user.full_name
+    name = approver_name or current_user.full_name or current_user.email
     if name not in rev["approvals"]:
         rev["approvals"].append(name)
     if len(rev["approvals"]) >= rev["min_approvals_required"]:

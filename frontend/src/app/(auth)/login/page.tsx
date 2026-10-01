@@ -1,22 +1,40 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, Suspense } from "react";
 import Link from "next/link";
-import { Eye, EyeOff, ArrowRight, Mail, Lock, Sparkles, CheckCircle2, AlertCircle } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { Eye, EyeOff, ArrowRight, Mail, AlertCircle, Loader2 } from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { OAuthButtons } from "@/components/auth/OAuthButtons";
-import { loginUser, requestMagicLink } from "@/lib/api";
+import { loginUser, requestMagicLink, verifyMagicLink } from "@/lib/api/auth";
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [authMethod, setAuthMethod] = useState<"password" | "magic-link">("password");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
   const [loading, setLoading] = useState(false);
+  const [verifyingMagicLink, setVerifyingMagicLink] = useState(false);
   const [magicLinkSent, setMagicLinkSent] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    const magicToken = searchParams.get("token") || searchParams.get("magic_token");
+    if (magicToken) {
+      setVerifyingMagicLink(true);
+      setErrorMessage(null);
+      verifyMagicLink(magicToken)
+        .then(() => {
+          router.push("/dashboard");
+        })
+        .catch((err: any) => {
+          setErrorMessage(err.message || "Invalid or expired magic link. Please sign in or request a new link.");
+          setVerifyingMagicLink(false);
+        });
+    }
+  }, [searchParams, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -33,7 +51,6 @@ export default function LoginPage() {
           password,
           remember_me: rememberMe,
         });
-        // Success redirect to studio dashboard
         router.push("/dashboard");
       }
     } catch (err: any) {
@@ -42,6 +59,18 @@ export default function LoginPage() {
       setLoading(false);
     }
   };
+
+  if (verifyingMagicLink) {
+    return (
+      <div className="w-full space-y-6 text-center py-12">
+        <div className="w-12 h-12 rounded-2xl bg-[#DEF7EC] text-[#057A55] flex items-center justify-center mx-auto animate-pulse">
+          <Loader2 className="w-6 h-6 animate-spin" />
+        </div>
+        <h2 className="text-xl font-bold text-[#1E1915]">Verifying magic link...</h2>
+        <p className="text-xs text-[#5C554D]">Authenticating your Strata workspace session.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="w-full space-y-6">
@@ -215,3 +244,12 @@ export default function LoginPage() {
     </div>
   );
 }
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<div className="w-full text-center py-12 text-xs text-[#736B63]">Loading...</div>}>
+      <LoginForm />
+    </Suspense>
+  );
+}
+

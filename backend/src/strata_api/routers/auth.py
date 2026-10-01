@@ -37,6 +37,7 @@ from strata_api.schemas.auth import (
     UserLoginRequest,
     UserRegisterRequest,
     UserResponse,
+    VerifyMagicLinkRequest,
 )
 
 auth_router = APIRouter(prefix="/auth", tags=["Authentication"])
@@ -500,7 +501,7 @@ async def request_magic_link(
 
     # 15-minute magic token
     token = create_access_token(
-        data={"sub": user.id, "email": user.email, "type": "magic_link"},
+        data={"sub": user.id, "email": user.email, "type": "magic_link", "ver": getattr(user, "token_version", 1)},
         expires_delta=timedelta(minutes=15),
     )
 
@@ -513,6 +514,68 @@ async def request_magic_link(
         "status": "success",
         "message": f"If an account exists, a magic sign-in link has been dispatched to {clean_email}.",
     }
+
+
+@auth_router.post(
+    "/magic-link/verify",
+    response_model=TokenResponse,
+    summary="Verify passwordless magic login link and create session",
+    dependencies=[Depends(RateLimiter(max_requests=10, window_seconds=60, scope="auth:magic-verify"))],
+)
+async def verify_magic_link(
+    payload: VerifyMagicLinkRequest,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+):
+    """Verify single-use magic login link token and issue session tokens."""
+    token = payload.token.strip()
+    if is_token_revoked(token):
+        raise HTTPException(status_code=401, detail="Magic link has already been used or expired.")
+
+    token_data = decode_magic_token(token)
+    if not token_data or not token_data.get("sub"):
+        raise HTTPException(status_code=401, detail="Invalid or expired magic link token.")
+
+    user_id = token_data.get("sub")
+    token_ver = token_data.get("ver")
+
+    result = await db.execute(select(UserModel).where(UserModel.id == user_id))
+    user = result.scalar_one_or_none()
+
+    if not user or not user.is_active:
+        raise HTTPException(status_code=401, detail="User account not found or disabled.")
+
+    if token_ver is not None and getattr(user, "token_version", 1) != token_ver:
+        raise HTTPException(status_code=401, detail="Session expired. Please request a new magic link.")
+
+    # Revoke single-use magic token
+    revoke_token(token)
+
+    access_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": user.id, "email": user.email, "role": user.role, "type": "access", "ver": getattr(user, "token_version", 1)},
+        expires_delta=access_expires,
+    )
+    refresh_token = create_refresh_token(
+        data={"sub": user.id, "email": user.email, "type": "refresh", "ver": getattr(user, "token_version", 1)},
+        expires_delta=timedelta(days=7),
+    )
+
+    set_auth_cookies(
+        response=response,
+        access_token=access_token,
+        refresh_token=refresh_token,
+        access_expire_seconds=int(access_expires.total_seconds()),
+        refresh_expire_seconds=7 * 86400,
+    )
+
+    return TokenResponse(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        token_type="bearer",
+        expires_in=int(access_expires.total_seconds()),
+        user=UserResponse.model_validate(user),
+    )
 
 
 @auth_router.post(

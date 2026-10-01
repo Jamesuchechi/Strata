@@ -46,6 +46,12 @@ DISALLOWED_FUNCS = {
     "httpfs",
     "sqlite_scanner",
     "postgres_scanner",
+    "duckdb_views",
+    "duckdb_tables",
+    "duckdb_databases",
+    "duckdb_schemas",
+    "duckdb_types",
+    "duckdb_indexes",
 }
 
 KW_RE = re.compile(r"\b(" + "|".join(DISALLOWED_KEYWORDS) + r")\b", re.IGNORECASE)

@@ -57,6 +57,7 @@ import {
   mergeBranches,
   fetchDatasetBlame,
 } from "@/lib/api";
+import { getStoredUser } from "@/lib/api/auth";
 import { useStudio } from "@/context/StudioContext";
 import {
   DatasetItem,
@@ -348,12 +349,13 @@ export default function VersionsPage() {
     if (!newCommitMessage.trim() || !newCommitDataset) return;
     setIsSubmitting(true);
     try {
+      const currentUser = getStoredUser();
       const newVersionTag = `v1.${commits.length}.0`;
       const created = await createSnapshotCommit({
         dataset_name: newCommitDataset,
         message: newCommitMessage,
         version_tag: newVersionTag,
-        author: "James Uchechi",
+        author: currentUser?.full_name || currentUser?.email || undefined,
       });
       setCommits((prev) => [created, ...prev]);
       setSelectedCommitId(created.id);
@@ -435,6 +437,7 @@ export default function VersionsPage() {
     if (!mergeTargetBranch || !mergeSourceBranch) return;
     setIsExecutingMerge(true);
     try {
+      const currentUser = getStoredUser();
       const target = newCommitDataset || (datasets.length > 0 ? datasets[0].filename : "");
       if (!target) return;
       const res = await mergeBranches({
@@ -442,7 +445,7 @@ export default function VersionsPage() {
         target_branch: mergeTargetBranch,
         source_branch: mergeSourceBranch,
         strategy: mergeStrategy,
-        author: "James Uchechi",
+        author: currentUser?.full_name || currentUser?.email || undefined,
       });
       alert(res.message || "Merge completed successfully!");
       await loadCommits();
