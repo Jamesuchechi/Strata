@@ -204,3 +204,26 @@ async def test_legitimate_pipeline_custom_step_executes_safely():
         dry_data = dry_res.json()
         assert dry_data["status"] == "success"
         assert "val_double" in dry_data["dry_run"]["columns_list"]
+
+
+def test_ast_blocks_polars_io_and_formatting():
+    """Verify that file I/O, writing, scanning, and string format introspection are blocked."""
+    # Polars file I/O
+    assert not _is_ast_safe("pl.read_csv('/etc/passwd')")[0]
+    assert not _is_ast_safe("pl.read_parquet('secret.parquet')")[0]
+    assert not _is_ast_safe("pl.scan_parquet('data.parquet')")[0]
+    assert not _is_ast_safe("df.write_csv('/tmp/out.csv')")[0]
+    assert not _is_ast_safe("df.sink_parquet('/tmp/out.parquet')")[0]
+    assert not _is_ast_safe("df.to_csv('/tmp/out.csv')")[0]
+
+    # String format injection
+    assert not _is_ast_safe("'{0.__class__}'.format(df)")[0]
+    assert not _is_ast_safe("s = 'hello'.format_map({})")[0]
+
+
+def test_sandbox_timeout_enforcement():
+    """Verify that long-running operations in the sandbox are terminated by timeout."""
+    slow_code = "x = 0\nfor i in range(50000000):\n    x += 1"
+    with pytest.raises(TimeoutError, match="timed out"):
+        run_sandboxed_code(slow_code, df=None, timeout_seconds=0.05)
+

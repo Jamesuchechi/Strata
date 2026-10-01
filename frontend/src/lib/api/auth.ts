@@ -35,8 +35,7 @@ export interface LoginPayload {
 }
 
 export interface ResetPasswordPayload {
-  email?: string;
-  token?: string;
+  token: string;
   new_password: string;
 }
 

@@ -123,8 +123,8 @@ def create_refresh_token(
     return jwt.encode(to_encode, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
 
 
-def decode_access_token(token: str) -> Optional[Dict[str, Any]]:
-    """Decode and validate a JWT access token, rejecting revoked tokens."""
+def decode_access_token(token: str, expected_type: Optional[str] = "access") -> Optional[Dict[str, Any]]:
+    """Decode and validate a JWT access token, rejecting revoked tokens and enforcing token type."""
     if is_token_revoked(token):
         return None
     try:
@@ -133,6 +133,8 @@ def decode_access_token(token: str) -> Optional[Dict[str, Any]]:
             settings.JWT_SECRET_KEY,
             algorithms=[settings.JWT_ALGORITHM],
         )
+        if expected_type is not None and payload.get("type") != expected_type:
+            return None
         jti = payload.get("jti")
         if jti and is_token_revoked(jti):
             return None
@@ -143,22 +145,17 @@ def decode_access_token(token: str) -> Optional[Dict[str, Any]]:
 
 def decode_refresh_token(token: str) -> Optional[Dict[str, Any]]:
     """Decode and validate a JWT refresh token, rejecting revoked tokens."""
-    if is_token_revoked(token):
-        return None
-    try:
-        payload = jwt.decode(
-            token,
-            settings.JWT_SECRET_KEY,
-            algorithms=[settings.JWT_ALGORITHM],
-        )
-        if payload.get("type") != "refresh":
-            return None
-        jti = payload.get("jti")
-        if jti and is_token_revoked(jti):
-            return None
-        return payload
-    except (jwt.PyJWTError, Exception):
-        return None
+    return decode_access_token(token, expected_type="refresh")
+
+
+def decode_reset_token(token: str) -> Optional[Dict[str, Any]]:
+    """Decode and validate a password reset token."""
+    return decode_access_token(token, expected_type="reset_password")
+
+
+def decode_magic_token(token: str) -> Optional[Dict[str, Any]]:
+    """Decode and validate a magic login link token."""
+    return decode_access_token(token, expected_type="magic_link")
 
 
 def sanitize_column_name(col: str) -> str:

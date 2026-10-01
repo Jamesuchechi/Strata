@@ -13,7 +13,9 @@ from strata_api.core.security import (
     create_access_token,
     create_refresh_token,
     decode_access_token,
+    decode_magic_token,
     decode_refresh_token,
+    decode_reset_token,
     generate_api_key,
     get_api_key_record,
     hash_password,
@@ -157,8 +159,8 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # Decode standard JWT access token
-    payload = decode_access_token(token)
+    # Decode standard JWT access token (must have type == 'access')
+    payload = decode_access_token(token, expected_type="access")
     if not payload or "sub" not in payload:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -181,6 +183,13 @@ async def get_current_user(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="User account is deactivated",
+        )
+
+    if payload.get("ver") is not None and getattr(user, "token_version", 1) != payload.get("ver"):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Session has expired due to password change or session reset",
+            headers={"WWW-Authenticate": "Bearer"},
         )
 
     return user
@@ -218,7 +227,7 @@ async def get_optional_current_user(
             if u and u.is_active:
                 return u
 
-    payload = decode_access_token(token)
+    payload = decode_access_token(token, expected_type="access")
     if not payload or "sub" not in payload:
         return None
 
@@ -226,6 +235,8 @@ async def get_optional_current_user(
     result = await db.execute(select(UserModel).where(UserModel.id == user_id))
     user = result.scalar_one_or_none()
     if not user or not user.is_active:
+        return None
+    if payload.get("ver") is not None and getattr(user, "token_version", 1) != payload.get("ver"):
         return None
     return user
 
@@ -269,11 +280,11 @@ async def register(
     # Issue JWT access + rotating refresh tokens
     expires_delta = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     token = create_access_token(
-        data={"sub": user.id, "email": user.email, "role": user.role},
+        data={"sub": user.id, "email": user.email, "role": user.role, "type": "access", "ver": getattr(user, "token_version", 1)},
         expires_delta=expires_delta,
     )
     refresh_token = create_refresh_token(
-        data={"sub": user.id, "email": user.email},
+        data={"sub": user.id, "email": user.email, "ver": getattr(user, "token_version", 1)},
         expires_delta=timedelta(days=7),
     )
 
@@ -329,20 +340,17 @@ async def login(
             detail="Your account has been deactivated. Please contact support.",
         )
 
-    # Adjust expiry based on remember_me
-    expire_minutes = (
-        settings.ACCESS_TOKEN_EXPIRE_MINUTES * 4 if payload.remember_me else settings.ACCESS_TOKEN_EXPIRE_MINUTES
-    )
-    expires_delta = timedelta(minutes=expire_minutes)
+    # Short-lived access token + configurable refresh token duration
+    expires_delta = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     refresh_days = 30 if payload.remember_me else 7
     refresh_delta = timedelta(days=refresh_days)
 
     token = create_access_token(
-        data={"sub": user.id, "email": user.email, "role": user.role},
+        data={"sub": user.id, "email": user.email, "role": user.role, "type": "access", "ver": getattr(user, "token_version", 1)},
         expires_delta=expires_delta,
     )
     refresh_token = create_refresh_token(
-        data={"sub": user.id, "email": user.email},
+        data={"sub": user.id, "email": user.email, "ver": getattr(user, "token_version", 1)},
         expires_delta=refresh_delta,
     )
 
@@ -403,17 +411,23 @@ async def refresh_session(
             detail="User account not found or deactivated",
         )
 
+    if claims.get("ver") is not None and getattr(user, "token_version", 1) != claims.get("ver"):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Session has expired or credentials have been changed. Please sign in again.",
+        )
+
     # Token Rotation: Revoke the old refresh token
     revoke_token(raw_token)
 
     # Issue new token pair
     expires_delta = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     new_access_token = create_access_token(
-        data={"sub": user.id, "email": user.email, "role": user.role},
+        data={"sub": user.id, "email": user.email, "role": user.role, "type": "access", "ver": getattr(user, "token_version", 1)},
         expires_delta=expires_delta,
     )
     new_refresh_token = create_refresh_token(
-        data={"sub": user.id, "email": user.email},
+        data={"sub": user.id, "email": user.email, "ver": getattr(user, "token_version", 1)},
         expires_delta=timedelta(days=7),
     )
 
@@ -520,7 +534,7 @@ async def forgot_password(
     reset_token = None
     if user:
         reset_token = create_access_token(
-            data={"sub": user.id, "email": user.email, "type": "reset_password"},
+            data={"sub": user.id, "email": user.email, "type": "reset_password", "ver": getattr(user, "token_version", 1)},
             expires_delta=timedelta(minutes=30),
         )
         from strata_api.core.email import EmailService
@@ -542,24 +556,17 @@ async def reset_password(
     payload: ResetPasswordRequest,
     db: AsyncSession = Depends(get_db),
 ):
-    """Verify reset token and update account password."""
-    user = None
+    """Verify reset token, update account password, and invalidate existing sessions."""
+    decoded = decode_reset_token(payload.token)
+    if not decoded or decoded.get("type") != "reset_password" or "sub" not in decoded:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The password reset link is invalid or has expired.",
+        )
 
-    if payload.token:
-        decoded = decode_access_token(payload.token)
-        if not decoded or decoded.get("type") != "reset_password":
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="The password reset link is invalid or has expired.",
-            )
-        user_id = decoded.get("sub")
-        result = await db.execute(select(UserModel).where(UserModel.id == user_id))
-        user = result.scalar_one_or_none()
-
-    elif payload.email:
-        clean_email = payload.email.strip().lower()
-        result = await db.execute(select(UserModel).where(UserModel.email == clean_email))
-        user = result.scalar_one_or_none()
+    user_id = decoded["sub"]
+    result = await db.execute(select(UserModel).where(UserModel.id == user_id))
+    user = result.scalar_one_or_none()
 
     if not user:
         raise HTTPException(
@@ -567,7 +574,22 @@ async def reset_password(
             detail="User account not found.",
         )
 
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="User account is deactivated",
+        )
+
+    # Invalidate existing token version so previous sessions are terminated immediately
     user.hashed_password = hash_password(payload.new_password)
+    user.token_version = (getattr(user, "token_version", 1) or 1) + 1
+
+    # Revoke reset token so it cannot be reused
+    jti = decoded.get("jti")
+    if jti:
+        revoke_token(jti)
+    revoke_token(payload.token)
+
     await db.commit()
 
     return {

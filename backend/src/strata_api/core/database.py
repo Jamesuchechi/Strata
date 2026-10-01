@@ -53,6 +53,9 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
             await session.close()
 
 
+from sqlalchemy import text
+
+
 async def init_db() -> None:
     """Initialize database tables and sync persistence state."""
     # Import all models here so they register with Base.metadata
@@ -61,6 +64,11 @@ async def init_db() -> None:
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # Ensure token_version column exists on existing SQLite tables
+        try:
+            await conn.execute(text("ALTER TABLE users ADD COLUMN token_version INTEGER DEFAULT 1 NOT NULL;"))
+        except Exception:
+            pass
 
     # Sync any persisted entities from database into runtime
     load_all_from_db()

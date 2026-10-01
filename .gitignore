@@ -49,6 +49,9 @@ next-env.d.ts
 
 # Data & Scratch Files (Root storage / local databases)
 /data/
+backend/data/
+**/data/storage/
+**/data/test_storage/
 /scratch/
 *.duckdb
 *.db

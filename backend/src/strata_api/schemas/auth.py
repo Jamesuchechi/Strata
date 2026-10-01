@@ -32,8 +32,7 @@ class ForgotPasswordRequest(BaseModel):
 
 class ResetPasswordRequest(BaseModel):
     """Payload for setting a new password using a reset token."""
-    email: Optional[str] = Field(None, description="Account email")
-    token: Optional[str] = Field(None, description="One-time password reset token")
+    token: str = Field(..., description="One-time password reset token")
     new_password: str = Field(..., min_length=8, description="New password, minimum 8 characters")
 
 

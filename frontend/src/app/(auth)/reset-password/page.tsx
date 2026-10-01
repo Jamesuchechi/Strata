@@ -22,6 +22,10 @@ function ResetPasswordForm() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!token) {
+      setErrorMessage("A valid reset token is required. Please request a new password reset link.");
+      return;
+    }
     if (!passwordsMatch || password.length < 8) return;
 
     setIsLoading(true);
@@ -29,8 +33,7 @@ function ResetPasswordForm() {
 
     try {
       await resetPassword({
-        email: initialEmail || undefined,
-        token: token || undefined,
+        token,
         new_password: password,
       });
       setIsSuccess(true);

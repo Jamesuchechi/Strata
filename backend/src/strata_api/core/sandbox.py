@@ -5,6 +5,7 @@ for custom transformations and pipeline steps.
 """
 
 import ast
+import concurrent.futures
 from typing import Any, Dict, Optional, Tuple
 import polars as pl
 
@@ -30,6 +31,19 @@ BLOCKED_MODULES = {
     "platform",
     "posix",
     "nt",
+    "gc",
+    "codecs",
+    "io",
+    "glob",
+    "webbrowser",
+    "http",
+    "ftplib",
+    "poplib",
+    "imaplib",
+    "smtplib",
+    "asyncio",
+    "concurrent",
+    "_thread",
 }
 
 BLOCKED_NAMES = {
@@ -43,6 +57,16 @@ BLOCKED_NAMES = {
     "__code__",
     "__reduce__",
     "__reduce_ex__",
+    "__format__",
+    "__dir__",
+    "__getattribute__",
+    "__dict__",
+    "__qualname__",
+    "__closure__",
+    "__func__",
+    "__self__",
+    "__annotations__",
+    "__import__",
     "eval",
     "exec",
     "compile",
@@ -58,6 +82,74 @@ BLOCKED_NAMES = {
     "dir",
     "input",
     "help",
+    "callable",
+    "memoryview",
+    "classmethod",
+    "staticmethod",
+    "super",
+    "property",
+    "type",
+}
+
+BLOCKED_ATTRIBUTES = {
+    # Polars & Pandas file/database reading
+    "read_csv",
+    "read_parquet",
+    "read_json",
+    "read_ipc",
+    "read_excel",
+    "read_database",
+    "read_delta",
+    "read_avro",
+    "read_sql",
+    "read_table",
+    "read_feather",
+    "read_clipboard",
+    "scan_csv",
+    "scan_parquet",
+    "scan_json",
+    "scan_ipc",
+    "scan_delta",
+    "scan_iceberg",
+    "scan_pyarrow_dataset",
+    "scan_ndjson",
+    # Polars & Pandas file/database writing and streaming
+    "write_csv",
+    "write_parquet",
+    "write_json",
+    "write_ipc",
+    "write_excel",
+    "write_database",
+    "write_delta",
+    "write_avro",
+    "write_ndjson",
+    "sink_parquet",
+    "sink_csv",
+    "sink_json",
+    "sink_ipc",
+    "sink_ndjson",
+    "to_csv",
+    "to_parquet",
+    "to_json",
+    "to_excel",
+    "to_sql",
+    "to_pickle",
+    "to_feather",
+    "to_hdf",
+    # String format injection
+    "format",
+    "format_map",
+    # Frame/code reflection
+    "gi_frame",
+    "f_globals",
+    "f_locals",
+    "f_code",
+    "f_back",
+    "cr_frame",
+    "ag_frame",
+    "co_code",
+    "func_globals",
+    "func_code",
 }
 
 SAFE_BUILTINS: Dict[str, Any] = {
@@ -92,7 +184,7 @@ SAFE_BUILTINS: Dict[str, Any] = {
 
 
 class SecurityASTVisitor(ast.NodeVisitor):
-    """AST Visitor that inspects code trees for blocked modules, identifiers, and private attributes."""
+    """AST Visitor that inspects code trees for blocked modules, identifiers, and private/dangerous attributes."""
 
     def __init__(self):
         self.errors = []
@@ -112,14 +204,14 @@ class SecurityASTVisitor(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_Name(self, node: ast.Name):
-        if node.id in BLOCKED_NAMES:
+        if node.id in BLOCKED_NAMES or node.id in BLOCKED_ATTRIBUTES:
             self.errors.append(f"Access to blocked identifier '{node.id}'")
         elif node.id.startswith("_"):
             self.errors.append(f"Access to private identifier '{node.id}'")
         self.generic_visit(node)
 
     def visit_Attribute(self, node: ast.Attribute):
-        if node.attr in BLOCKED_NAMES:
+        if node.attr in BLOCKED_NAMES or node.attr in BLOCKED_ATTRIBUTES:
             self.errors.append(f"Access to blocked attribute '{node.attr}'")
         elif node.attr.startswith("_"):
             self.errors.append(f"Access to private attribute '{node.attr}'")
@@ -164,17 +256,26 @@ def run_sandboxed_code(
     """Execute validated code in a restricted execution environment.
 
     Fails closed: any code failing AST validation is rejected before execution.
+    Enforces an execution timeout.
     """
     validate_safe_code(code)
 
     loc: Dict[str, Any] = {"df": df, "pl": pl}
     glob: Dict[str, Any] = {"__builtins__": SAFE_BUILTINS, "pl": pl}
 
-    exec(code, glob, loc)
+    def _execute():
+        exec(code, glob, loc)
+        result_df = loc.get("df")
+        if result_df is not None and isinstance(result_df, pl.DataFrame):
+            return result_df
+        if df is not None:
+            return df
+        return pl.DataFrame()
 
-    result_df = loc.get("df")
-    if result_df is not None and isinstance(result_df, pl.DataFrame):
-        return result_df
-    if df is not None:
-        return df
-    return pl.DataFrame()
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(_execute)
+        try:
+            return future.result(timeout=timeout_seconds)
+        except concurrent.futures.TimeoutError:
+            raise TimeoutError(f"Sandboxed code execution timed out after {timeout_seconds}s")
+

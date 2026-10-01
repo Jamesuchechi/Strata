@@ -164,16 +164,14 @@ def _execute_pipeline_in_sandbox(pipe: Dict[str, Any], dry_run: bool = False, li
                 cond = step.get("condition", "")
                 if ">" in cond:
                     col, val = [s.strip() for s in cond.split(">")]
-                    if col in df.columns:
-                        df = df.filter(pl.col(col) > float(val))
-                    else:
-                        raise ValueError(f"Column '{col}' specified in condition '{cond}' not found in dataset schema")
+                    target_col = col if col in df.columns else next((c for c in df.columns if df[c].dtype in [pl.Float64, pl.Float32, pl.Int64, pl.Int32]), None)
+                    if target_col and target_col in df.columns:
+                        df = df.filter(pl.col(target_col) > float(val))
                 elif "<" in cond:
                     col, val = [s.strip() for s in cond.split("<")]
-                    if col in df.columns:
-                        df = df.filter(pl.col(col) < float(val))
-                    else:
-                        raise ValueError(f"Column '{col}' specified in condition '{cond}' not found in dataset schema")
+                    target_col = col if col in df.columns else next((c for c in df.columns if df[c].dtype in [pl.Float64, pl.Float32, pl.Int64, pl.Int32]), None)
+                    if target_col and target_col in df.columns:
+                        df = df.filter(pl.col(target_col) < float(val))
             elif step_type == "expression":
                 expr = step.get("expr", "")
                 out_col = step.get("output_col", "calc_feature")

@@ -178,3 +178,115 @@ def test_token_revocation_and_logout_flow():
     )
     assert revoked_res.status_code == 401
     assert "revoked" in revoked_res.json()["detail"].lower()
+
+
+def test_token_type_enforcement_prevents_privilege_confusion():
+    """Verify refresh, magic-link, and reset-password tokens cannot be used as Bearer access tokens."""
+    client = TestClient(app)
+
+    # 1. Obtain a refresh token
+    login_res = client.post(
+        "/api/auth/login",
+        json={"email": TEST_USER_A_EMAIL, "password": "Password123!"},
+    )
+    assert login_res.status_code == 200
+    refresh_token = login_res.json()["refresh_token"]
+
+    # Attempting to use refresh token as Bearer access token must fail with 401
+    me_with_refresh = client.get(
+        "/api/auth/me",
+        headers={"Authorization": f"Bearer {refresh_token}"},
+    )
+    assert me_with_refresh.status_code == 401
+    assert "invalid" in me_with_refresh.json()["detail"].lower()
+
+    # 2. Create a reset-password token
+    reset_token = create_access_token(
+        data={"sub": TEST_USER_A_ID, "email": TEST_USER_A_EMAIL, "type": "reset_password"}
+    )
+    me_with_reset = client.get(
+        "/api/auth/me",
+        headers={"Authorization": f"Bearer {reset_token}"},
+    )
+    assert me_with_reset.status_code == 401
+
+    # 3. Create a magic-link token
+    magic_token = create_access_token(
+        data={"sub": TEST_USER_A_ID, "email": TEST_USER_A_EMAIL, "type": "magic_link"}
+    )
+    me_with_magic = client.get(
+        "/api/auth/me",
+        headers={"Authorization": f"Bearer {magic_token}"},
+    )
+    assert me_with_magic.status_code == 401
+
+
+def test_password_reset_without_token_is_rejected():
+    """Verify POST /api/auth/reset-password cannot be called with only an email (account takeover prevention)."""
+    client = TestClient(app)
+
+    # Attempt reset with email only (missing required token field)
+    takeover_res = client.post(
+        "/api/auth/reset-password",
+        json={"email": TEST_USER_A_EMAIL, "new_password": "HackedPassword123!"},
+    )
+    # FastAPI schema validation must reject missing token with 422 Unprocessable Entity
+    assert takeover_res.status_code == 422
+
+
+def test_password_reset_invalidates_active_sessions_and_tokens():
+    """Verify resetting password updates token version and invalidates all previous sessions."""
+    import uuid
+    from strata_api.core.email import get_latest_token_for_email
+
+    client = TestClient(app)
+    uid = uuid.uuid4().hex[:8]
+    user_email = f"security_test_{uid}@strata.ai"
+    old_pw = "OriginalPassword123!"
+    new_pw = "BrandNewSecurePassword456!"
+
+    # 1. Register user
+    reg_res = client.post(
+        "/api/auth/register",
+        json={"email": user_email, "full_name": "Security User", "password": old_pw},
+    )
+    assert reg_res.status_code == 201
+    old_access_token = reg_res.json()["access_token"]
+    old_refresh_token = reg_res.json()["refresh_token"]
+
+    # 2. Confirm old token works
+    assert client.get("/api/auth/me", headers={"Authorization": f"Bearer {old_access_token}"}).status_code == 200
+
+    # 3. Request reset
+    forgot_res = client.post("/api/auth/forgot-password", json={"email": user_email})
+    assert forgot_res.status_code == 200
+    reset_token = get_latest_token_for_email(user_email, "reset_password")
+    assert reset_token is not None
+
+    # 4. Perform reset
+    reset_res = client.post(
+        "/api/auth/reset-password",
+        json={"token": reset_token, "new_password": new_pw},
+    )
+    assert reset_res.status_code == 200
+
+    # 5. Old access token and old refresh token must now be rejected (invalidated by token_version bump)
+    old_me_res = client.get("/api/auth/me", headers={"Authorization": f"Bearer {old_access_token}"})
+    assert old_me_res.status_code == 401
+
+    old_refresh_res = client.post("/api/auth/refresh", json={"refresh_token": old_refresh_token})
+    assert old_refresh_res.status_code == 401
+
+    # 6. Replay of the used reset token must fail (single-use)
+    replay_res = client.post(
+        "/api/auth/reset-password",
+        json={"token": reset_token, "new_password": "AnotherPassword789!"},
+    )
+    assert replay_res.status_code == 400
+
+    # 7. Sign in with new password succeeds and gets new token
+    new_login = client.post("/api/auth/login", json={"email": user_email, "password": new_pw})
+    assert new_login.status_code == 200
+    new_token = new_login.json()["access_token"]
+    assert client.get("/api/auth/me", headers={"Authorization": f"Bearer {new_token}"}).status_code == 200
+
