@@ -3,7 +3,9 @@
  */
 
 import { PreviewData, QueryResult } from "./types";
-import { getStoredToken } from "./api/auth";
+import { getStoredToken, refreshSession, clearStoredAuth } from "./api/auth";
+
+let refreshPromise: Promise<string | null> | null = null;
 
 export async function apiFetch(input: string | URL, init: RequestInit = {}): Promise<Response> {
   const headers = new Headers(init.headers || {});
@@ -11,11 +13,50 @@ export async function apiFetch(input: string | URL, init: RequestInit = {}): Pro
   if (token && !headers.has("Authorization")) {
     headers.set("Authorization", `Bearer ${token}`);
   }
-  return fetch(input, {
+  const response = await fetch(input, {
     ...init,
     headers,
     credentials: init.credentials || "include",
   });
+
+  const urlStr = typeof input === "string" ? input : input.toString();
+  const isAuthEndpoint =
+    urlStr.includes("/auth/login") ||
+    urlStr.includes("/auth/refresh") ||
+    urlStr.includes("/auth/register") ||
+    urlStr.includes("/auth/logout");
+
+  if (response.status === 401 && !isAuthEndpoint && typeof window !== "undefined") {
+    if (!refreshPromise) {
+      refreshPromise = (async () => {
+        try {
+          const authData = await refreshSession();
+          return authData.access_token || null;
+        } catch {
+          clearStoredAuth();
+          if (window.location.pathname !== "/login" && !window.location.pathname.startsWith("/login")) {
+            window.location.href = "/login";
+          }
+          return null;
+        } finally {
+          refreshPromise = null;
+        }
+      })();
+    }
+
+    const newToken = await refreshPromise;
+    if (newToken) {
+      const retryHeaders = new Headers(init.headers || {});
+      retryHeaders.set("Authorization", `Bearer ${newToken}`);
+      return fetch(input, {
+        ...init,
+        headers: retryHeaders,
+        credentials: init.credentials || "include",
+      });
+    }
+  }
+
+  return response;
 }
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
@@ -109,12 +150,13 @@ export async function rollbackToCommit(commitId: string): Promise<any> {
 }
 
 export async function compareCommits(baseId: string, targetId: string): Promise<any> {
-  const response = await apiFetch(`${API_BASE}/diff/compare?base_id=${baseId}&target_id=${targetId}`);
+  const response = await apiFetch(`${API_BASE}/diff/detailed_compare?base_id=${baseId}&target_id=${targetId}`);
   if (!response.ok) {
     throw new Error(`Failed to compare snapshots (${response.status})`);
   }
   return response.json();
 }
+
 
 export async function fetchLineageGraph(): Promise<any> {
   const response = await apiFetch(`${API_BASE}/diff/lineage`);

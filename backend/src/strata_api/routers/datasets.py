@@ -84,6 +84,27 @@ def get_storage_dir() -> str:
     return storage_path
 
 
+def sanitize_storage_filename(raw_name: str, prefix: str = "") -> str:
+    """Sanitize raw filename against path traversal (../), null bytes, and unsafe characters."""
+    base_name = os.path.basename(raw_name or "dataset").strip()
+    safe_name = re.sub(r'[^\w\-_\. ]', '_', base_name).lstrip(".")
+    if not safe_name:
+        safe_name = "dataset"
+    if prefix:
+        return f"{prefix}_{safe_name}"
+    return safe_name
+
+
+def get_safe_storage_path(storage_dir: str, safe_filename: str) -> str:
+    """Resolve absolute storage path and verify it stays within storage_dir."""
+    storage_dir_abs = os.path.abspath(storage_dir)
+    target_path = os.path.abspath(os.path.join(storage_dir_abs, safe_filename))
+    if not (target_path == storage_dir_abs or target_path.startswith(storage_dir_abs + os.sep)):
+        raise HTTPException(status_code=400, detail="Invalid filename or path traversal detected.")
+    return target_path
+
+
+
 def register_dataset_in_store(
     file_path: str,
     filename: str,
@@ -549,7 +570,7 @@ async def transform_dataset(
     new_version_count = record.get("version_count", 1) + 1
     new_version_tag = f"v1.{new_version_count - 1}.0"
     new_filename = f"{record['id']}_v{new_version_count}.parquet"
-    new_file_path = os.path.join(storage_dir, new_filename)
+    new_file_path = get_safe_storage_path(storage_dir, new_filename)
     transformed_df.write_parquet(new_file_path)
 
     # Compute new hash
@@ -855,14 +876,15 @@ async def import_dataset_from_url(
         inferred_ext = path_suffix
 
     base_name = req.name or os.path.basename(parsed.path) or "remote_dataset"
-    if not base_name.endswith(inferred_ext):
-        filename = f"{base_name.rsplit('.', 1)[0]}{inferred_ext}"
+    safe_base = sanitize_storage_filename(base_name)
+    if not safe_base.endswith(inferred_ext):
+        filename = f"{safe_base.rsplit('.', 1)[0]}{inferred_ext}"
     else:
-        filename = base_name
+        filename = safe_base
 
     content_hash = hashlib.sha256(data_bytes).hexdigest()
     storage_dir = get_storage_dir()
-    stored_path = os.path.join(storage_dir, f"{content_hash[:12]}_{filename}")
+    stored_path = get_safe_storage_path(storage_dir, f"{content_hash[:12]}_{filename}")
 
     with open(stored_path, "wb") as f_out:
         f_out.write(data_bytes)
@@ -954,7 +976,11 @@ async def import_dataset_from_database(
 
     limit = min(req.limit or 50000, 100000)
     dataset_name = req.name or "database_query_extract"
-    filename = f"{dataset_name.replace(' ', '_').lower()}.parquet"
+    clean_name = sanitize_storage_filename(dataset_name)
+    if not clean_name.endswith(".parquet"):
+        filename = f"{clean_name.rsplit('.', 1)[0]}.parquet"
+    else:
+        filename = clean_name
 
     df: Optional[pl.DataFrame] = None
 
@@ -1011,7 +1037,7 @@ async def import_dataset_from_database(
     raw_bytes = content_bytes.getvalue()
     content_hash = hashlib.sha256(raw_bytes).hexdigest()
 
-    stored_path = os.path.join(storage_dir, f"{content_hash[:12]}_{filename}")
+    stored_path = get_safe_storage_path(storage_dir, f"{content_hash[:12]}_{filename}")
     with open(stored_path, "wb") as f_out:
         f_out.write(raw_bytes)
 
@@ -1125,11 +1151,11 @@ async def import_sample_dataset(
         })
 
     storage_dir = get_storage_dir()
+    safe_sample_name = sanitize_storage_filename(filename)
+    stored_path = get_safe_storage_path(storage_dir, f"sample_{safe_sample_name}")
     if filename.endswith(".csv"):
-        stored_path = os.path.join(storage_dir, f"sample_{filename}")
         df.write_csv(stored_path)
     else:
-        stored_path = os.path.join(storage_dir, f"sample_{filename}")
         df.write_parquet(stored_path)
 
     content_hash = hashlib.sha256(open(stored_path, "rb").read()).hexdigest()

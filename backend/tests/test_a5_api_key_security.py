@@ -153,3 +153,50 @@ def test_sdk_client_initialization_with_api_key():
     """Verify StrataClient wires api_key into headers."""
     client = StrataClient(base_url="http://test:8000/api", api_key="strata_live_test_12345")
     assert client.headers["X-API-Key"] == "strata_live_test_12345"
+
+
+def test_api_key_and_revoked_token_database_persistence():
+    """Verify API keys and revoked tokens persist to SQLite/Postgres across memory cache eviction."""
+    from strata_api.core.security import _api_keys_db, _revoked_tokens, is_token_revoked, revoke_token
+    from strata_api.core.persistence import load_all_from_db
+
+    # 1. Generate API key
+    raw_key, record = generate_api_key(user_id="persisted_user", name="Persistent Key")
+    assert verify_api_key(raw_key) is True
+
+    # 2. Revoke a dummy token
+    test_jti = f"jti_test_{uuid.uuid4().hex}"
+    revoke_token(test_jti)
+    assert is_token_revoked(test_jti) is True
+
+    # 3. Simulate process restart / memory cache wipe
+    _api_keys_db.clear()
+    _revoked_tokens.clear()
+
+    # In-memory is empty now
+    assert len(_api_keys_db) == 0
+    assert len(_revoked_tokens) == 0
+
+    # 4. load_all_from_db should restore them from the database
+    load_all_from_db()
+    assert verify_api_key(raw_key) is True
+    assert is_token_revoked(test_jti) is True
+
+
+@pytest.mark.asyncio
+async def test_file_upload_path_traversal_guard():
+    """Verify uploaded file names with path traversal elements are safely sanitized and confined."""
+    from strata_api.routers.datasets import sanitize_storage_filename, get_safe_storage_path, get_storage_dir
+
+    storage_dir = get_storage_dir()
+
+    # Traversal name must be sanitized to safe basename
+    malicious_name = "../../../../../etc/passwd"
+    clean_name = sanitize_storage_filename(malicious_name)
+    assert ".." not in clean_name
+    assert "/" not in clean_name
+    assert clean_name == "passwd"
+
+    safe_path = get_safe_storage_path(storage_dir, f"prefix_{clean_name}")
+    assert safe_path.startswith(storage_dir)
+

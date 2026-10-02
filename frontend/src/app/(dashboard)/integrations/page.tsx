@@ -27,6 +27,7 @@ import {
   ChevronRight,
   ShieldCheck,
   Terminal,
+  Key,
 } from "lucide-react";
 import {
   fetchIntegrationsStatus,
@@ -40,6 +41,10 @@ import {
   deleteDatabaseConnection,
   testDatabaseConnection,
   fetchDatasets,
+  fetchApiKeys,
+  createApiKey,
+  revokeApiKey,
+  ApiKeyItem,
 } from "@/lib/api";
 import {
   IntegrationStatusResponse,
@@ -49,13 +54,22 @@ import {
 } from "@/lib/types";
 
 export default function IntegrationsPage() {
-  const [activeTab, setActiveTab] = useState<"connectors" | "boilerplate" | "webhooks" | "mlflow" | "databases">("connectors");
+  const [activeTab, setActiveTab] = useState<"connectors" | "boilerplate" | "webhooks" | "mlflow" | "databases" | "api_keys">("connectors");
   const [statusData, setStatusData] = useState<IntegrationStatusResponse | null>(null);
   const [datasets, setDatasets] = useState<DatasetItem[]>([]);
   const [dbConnections, setDbConnections] = useState<DatabaseConnection[]>([]);
+  const [apiKeys, setApiKeys] = useState<ApiKeyItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  // API Keys Management State
+  const [isAddKeyOpen, setIsAddKeyOpen] = useState(false);
+  const [newKeyName, setNewKeyName] = useState("");
+  const [newKeyExpiry, setNewKeyExpiry] = useState<number>(30);
+  const [newCreatedRawKey, setNewCreatedRawKey] = useState<string | null>(null);
+  const [copiedRawKey, setCopiedRawKey] = useState(false);
+  const [isCreatingKey, setIsCreatingKey] = useState(false);
 
   // Boilerplate Generator State
   const [selectedDataset, setSelectedDataset] = useState<string>("my_dataset.csv");
@@ -105,10 +119,11 @@ export default function IntegrationsPage() {
     setIsLoading(true);
     setError(null);
     try {
-      const [statusRes, datasetsRes, dbRes] = await Promise.all([
+      const [statusRes, datasetsRes, dbRes, apiKeysRes] = await Promise.all([
         fetchIntegrationsStatus().catch(() => null),
         fetchDatasets().catch(() => []),
         fetchDatabaseConnections().catch(() => ({ connections: [] })),
+        fetchApiKeys().catch(() => ({ api_keys: [] })),
       ]);
 
       if (statusRes) {
@@ -120,11 +135,51 @@ export default function IntegrationsPage() {
         setSelectedVersion(datasetsRes[0].latest_version || "main");
       }
       setDbConnections(dbRes.connections || []);
+      setApiKeys(apiKeysRes.api_keys || []);
     } catch (err: any) {
       setError(err.message || "Failed to load integrations data");
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleCreateApiKey = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newKeyName.trim()) return;
+    setIsCreatingKey(true);
+    setError(null);
+    try {
+      const res = await createApiKey({
+        name: newKeyName.trim(),
+        expires_in_days: newKeyExpiry > 0 ? newKeyExpiry : undefined,
+      });
+      setNewCreatedRawKey(res.raw_key);
+      setNewKeyName("");
+      setSuccessMsg("API key generated successfully!");
+      setTimeout(() => setSuccessMsg(null), 3000);
+      loadAllData();
+    } catch (err: any) {
+      setError(err.message || "Failed to create API key");
+    } finally {
+      setIsCreatingKey(false);
+    }
+  };
+
+  const handleRevokeApiKey = async (keyId: string) => {
+    try {
+      await revokeApiKey(keyId);
+      setSuccessMsg("API key revoked");
+      setTimeout(() => setSuccessMsg(null), 3000);
+      loadAllData();
+    } catch (err: any) {
+      setError(err.message || "Failed to revoke API key");
+    }
+  };
+
+  const handleCopyRawKey = (key: string) => {
+    navigator.clipboard.writeText(key);
+    setCopiedRawKey(true);
+    setTimeout(() => setCopiedRawKey(false), 2000);
   };
 
   useEffect(() => {
@@ -371,6 +426,17 @@ export default function IntegrationsPage() {
         >
           <Database className="w-3.5 h-3.5 text-emerald-600" />
           <span>Database Connections Vault</span>
+        </button>
+        <button
+          onClick={() => setActiveTab("api_keys")}
+          className={`flex items-center gap-2 px-4 py-2.5 text-xs font-semibold rounded-t-xl transition-all border-b-2 whitespace-nowrap ${
+            activeTab === "api_keys"
+              ? "border-[#0061FE] text-[#0061FE] bg-white shadow-xs"
+              : "border-transparent text-[#5C554D] hover:text-[#1E1915] hover:bg-[#F7F5F2]"
+          }`}
+        >
+          <Key className="w-3.5 h-3.5 text-[#0061FE]" />
+          <span>API Keys & Programmatic Access</span>
         </button>
       </div>
 
@@ -1067,6 +1133,182 @@ export default function IntegrationsPage() {
                 </div>
               );
             })}
+          </div>
+        </div>
+      )}
+
+      {/* Tab 6: API Keys & Programmatic Access */}
+      {activeTab === "api_keys" && (
+        <div className="space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <h2 className="text-lg font-bold text-[#1E1915]">API Keys & Access Tokens</h2>
+              <p className="text-xs text-[#5C554D] mt-0.5">
+                Generate secure API keys to authenticate scripts, CI/CD pipelines, and SDK clients with the Strata API.
+              </p>
+            </div>
+            <button
+              onClick={() => {
+                setIsAddKeyOpen(true);
+                setNewCreatedRawKey(null);
+              }}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold bg-[#0061FE] text-white hover:bg-[#0052D4] transition-all shadow-xs shrink-0"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Generate New API Key</span>
+            </button>
+          </div>
+
+          {/* Newly Generated Raw Key Modal/Banner */}
+          {newCreatedRawKey && (
+            <div className="p-5 rounded-2xl bg-amber-50 border border-amber-300 space-y-3 animate-in fade-in">
+              <div className="flex items-center gap-2 text-amber-900 font-bold text-sm">
+                <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                <span>Copy your API Key now!</span>
+              </div>
+              <p className="text-xs text-amber-800">
+                This is the only time this API key will be displayed. Make sure to store it securely in your secrets manager or environment variables.
+              </p>
+              <div className="flex items-center gap-2 bg-white border border-amber-200 rounded-xl p-2.5 font-mono text-xs text-[#1E1915]">
+                <span className="flex-1 truncate select-all">{newCreatedRawKey}</span>
+                <button
+                  onClick={() => handleCopyRawKey(newCreatedRawKey)}
+                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-[#0061FE] text-white text-xs font-semibold hover:bg-[#0052D4] transition-all"
+                >
+                  {copiedRawKey ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                  <span>{copiedRawKey ? "Copied!" : "Copy"}</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Add Key Form Modal */}
+          {isAddKeyOpen && (
+            <div className="p-6 rounded-2xl bg-white border border-[#E8E4DF] shadow-xs space-y-4 animate-in fade-in">
+              <div className="flex items-center justify-between">
+                <h3 className="font-bold text-sm text-[#1E1915]">Create New API Key</h3>
+                <button
+                  onClick={() => setIsAddKeyOpen(false)}
+                  className="text-xs text-[#8C827A] hover:text-[#1E1915]"
+                >
+                  Cancel
+                </button>
+              </div>
+
+              <form onSubmit={handleCreateApiKey} className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-[#1E1915]">Key Name / Description</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Production Airflow Pipeline, ETL Worker"
+                      value={newKeyName}
+                      onChange={(e) => setNewKeyName(e.target.value)}
+                      required
+                      className="w-full px-3 py-2 bg-[#FAF8F5] border border-[#D6D0C7] rounded-xl text-xs text-[#1E1915] focus:outline-none focus:border-[#0061FE]"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-[#1E1915]">Expiration</label>
+                    <select
+                      value={newKeyExpiry}
+                      onChange={(e) => setNewKeyExpiry(Number(e.target.value))}
+                      className="w-full px-3 py-2 bg-[#FAF8F5] border border-[#D6D0C7] rounded-xl text-xs text-[#1E1915] focus:outline-none focus:border-[#0061FE]"
+                    >
+                      <option value={7}>7 Days</option>
+                      <option value={30}>30 Days</option>
+                      <option value={90}>90 Days</option>
+                      <option value={365}>1 Year</option>
+                      <option value={0}>Never Expires</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsAddKeyOpen(false)}
+                    className="px-4 py-2 rounded-xl text-xs font-semibold bg-[#FAF8F5] text-[#5C554D] hover:bg-[#F7F5F2]"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isCreatingKey}
+                    className="px-4 py-2 rounded-xl text-xs font-semibold bg-[#0061FE] text-white hover:bg-[#0052D4] disabled:opacity-50"
+                  >
+                    {isCreatingKey ? "Generating..." : "Generate Key"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {/* Keys List */}
+          <div className="bg-white rounded-2xl border border-[#E8E4DF] divide-y divide-[#E8E4DF] overflow-hidden">
+            {apiKeys.length === 0 ? (
+              <div className="p-8 text-center space-y-2">
+                <Key className="w-8 h-8 text-[#8C827A] mx-auto opacity-50" />
+                <p className="text-xs text-[#8C827A]">No API keys found. Generate a key to start making authenticated programmatic requests.</p>
+              </div>
+            ) : (
+              apiKeys.map((key) => {
+                const isRevoked = key.is_revoked;
+                return (
+                  <div key={key.id} className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <Key className="w-4 h-4 text-[#0061FE]" />
+                        <span className="font-bold text-sm text-[#1E1915]">{key.name}</span>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-blue-50 text-blue-700 border border-blue-200">
+                          {key.key_prefix}...
+                        </span>
+                        {isRevoked ? (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-red-50 text-red-700 border border-red-200">
+                            Revoked
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-emerald-50 text-emerald-700 border border-emerald-200">
+                            Active
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs font-mono text-[#8C827A]">
+                        Created: {new Date(key.created_at).toLocaleDateString()}
+                        {key.expires_at ? ` · Expires: ${new Date(key.expires_at).toLocaleDateString()}` : " · Never expires"}
+                        {key.last_used_at ? ` · Last used: ${new Date(key.last_used_at).toLocaleString()}` : " · Never used"}
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      {!isRevoked && (
+                        <button
+                          onClick={() => handleRevokeApiKey(key.id)}
+                          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-semibold bg-red-50 text-red-600 hover:bg-red-100 transition-colors border border-red-200"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Revoke Key</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          {/* Quickstart Usage Examples */}
+          <div className="bg-[#FAF8F5] rounded-2xl border border-[#E8E4DF] p-5 space-y-3">
+            <div className="flex items-center gap-2 text-xs font-bold text-[#1E1915]">
+              <Terminal className="w-4 h-4 text-[#0061FE]" />
+              <span>Programmatic Authentication Usage</span>
+            </div>
+            <p className="text-xs text-[#5C554D]">
+              Pass your API key in the <code className="font-mono bg-white px-1.5 py-0.5 rounded border border-[#E8E4DF]">X-API-Key</code> request header:
+            </p>
+            <div className="bg-[#1E1915] text-slate-200 p-3 rounded-xl font-mono text-xs overflow-x-auto">
+              <code>curl -H "X-API-Key: strata_your_api_key_here" http://localhost:8000/datasets</code>
+            </div>
           </div>
         </div>
       )}

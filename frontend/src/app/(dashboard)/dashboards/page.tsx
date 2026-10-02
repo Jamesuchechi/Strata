@@ -236,19 +236,57 @@ export default function DashboardsPage() {
 
                   {w.type === "chart" && (
                     <div className="my-3 h-48 bg-[#FAF8F5] rounded-xl border border-[#E8E4DF] flex flex-col items-center justify-center p-4 relative">
-                      <svg viewBox="0 0 500 160" className="w-full h-full">
-                        <line x1="40" y1="140" x2="480" y2="140" stroke="#E8E4DF" strokeWidth="1" />
-                        <line x1="40" y1="20" x2="40" y2="140" stroke="#E8E4DF" strokeWidth="1" />
-                        {/* Bars */}
-                        <rect x="60" y="40" width="45" height="100" fill="#0061FE" rx="4" />
-                        <rect x="130" y="70" width="45" height="70" fill="#0061FE" rx="4" fillOpacity="0.85" />
-                        <rect x="200" y="55" width="45" height="85" fill="#0061FE" rx="4" fillOpacity="0.7" />
-                        <rect x="270" y="90" width="45" height="50" fill="#0061FE" rx="4" fillOpacity="0.85" />
-                        <rect x="340" y="30" width="45" height="110" fill="#0061FE" rx="4" />
-                        <rect x="410" y="65" width="45" height="75" fill="#0061FE" rx="4" fillOpacity="0.8" />
-                      </svg>
-                      <span className="absolute bottom-2 right-3 text-[10px] font-mono text-[#8C827A]">
-                        Live Visualizer Link
+                      {(() => {
+                        const rows = activeDataset?.preview_rows || [];
+                        const colX = w.colX || activeDataset?.schema_fields?.[0]?.name || "index";
+                        const numCol = activeDataset?.schema_fields?.find((c) =>
+                          ["int", "float", "double", "number"].some((t) => c.type.toLowerCase().includes(t))
+                        )?.name || w.colY || colX;
+
+                        const sample = rows.slice(0, 8).map((r, i) => ({
+                          label: String(r[colX] ?? `R${i + 1}`).slice(0, 8),
+                          val: Number(r[numCol]) || (i + 1) * 12,
+                        }));
+                        const maxVal = Math.max(...sample.map((s) => s.val), 1);
+
+                        return (
+                          <svg viewBox="0 0 500 160" className="w-full h-full">
+                            <line x1="40" y1="130" x2="480" y2="130" stroke="#E8E4DF" strokeWidth="1" />
+                            <line x1="40" y1="20" x2="40" y2="130" stroke="#E8E4DF" strokeWidth="1" />
+                            {sample.map((s, idx) => {
+                              const barW = (400 / sample.length) * 0.65;
+                              const barX = 50 + (420 / sample.length) * idx;
+                              const barH = Math.max(8, (s.val / maxVal) * 95);
+                              const barY = 130 - barH;
+                              return (
+                                <g key={idx}>
+                                  <rect
+                                    x={barX}
+                                    y={barY}
+                                    width={barW}
+                                    height={barH}
+                                    fill="#0061FE"
+                                    rx={4}
+                                    fillOpacity={0.85 + (idx % 2) * 0.15}
+                                  />
+                                  <text
+                                    x={barX + barW / 2}
+                                    y={145}
+                                    textAnchor="middle"
+                                    fontSize="8"
+                                    fill="#8C827A"
+                                    fontFamily="monospace"
+                                  >
+                                    {s.label}
+                                  </text>
+                                </g>
+                              );
+                            })}
+                          </svg>
+                        );
+                      })()}
+                      <span className="absolute bottom-1 right-3 text-[9px] font-mono text-[#8C827A]">
+                        Live Dataset Metrics
                       </span>
                     </div>
                   )}

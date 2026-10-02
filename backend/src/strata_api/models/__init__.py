@@ -3,7 +3,7 @@
 from strata_api.core.database import Base
 from strata_api.models.user import UserModel
 from strata_api.models.dataset import DatasetModel, VersionModel, ShareLinkModel
-from strata_api.models.security import AuditTrailModel
+from strata_api.models.security import AuditTrailModel, ApiKeyModel, RevokedTokenModel
 from strata_api.models.integration import WebhookConfigModel, IntegrationEventModel
 from strata_api.models.collaboration import (
     WorkspaceModel,
@@ -28,6 +28,8 @@ __all__ = [
     "VersionModel",
     "ShareLinkModel",
     "AuditTrailModel",
+    "ApiKeyModel",
+    "RevokedTokenModel",
     "WebhookConfigModel",
     "IntegrationEventModel",
     "WorkspaceModel",

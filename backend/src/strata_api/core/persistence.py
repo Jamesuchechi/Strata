@@ -7,6 +7,7 @@ showcase items are persistently stored in Postgres / SQLite.
 
 import json
 import os
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from sqlalchemy import create_engine, select, delete
 from sqlalchemy.orm import sessionmaker
@@ -14,7 +15,7 @@ from sqlalchemy.orm import sessionmaker
 from strata_api.config import settings
 from strata_api.core.database import Base
 from strata_api.models.dataset import DatasetModel, VersionModel, ShareLinkModel
-from strata_api.models.security import AuditTrailModel
+from strata_api.models.security import AuditTrailModel, ApiKeyModel, RevokedTokenModel
 from strata_api.models.integration import WebhookConfigModel, IntegrationEventModel
 from strata_api.models.collaboration import (
     WorkspaceModel,
@@ -121,6 +122,148 @@ def save_audit_event_to_db(event: Dict[str, Any]) -> None:
                 hash=event["hash"],
             ))
             session.commit()
+
+
+def save_api_key_to_db(record: Dict[str, Any]) -> None:
+    """Upsert programmatic API key record into database."""
+    with SyncSessionLocal() as session:
+        existing = session.get(ApiKeyModel, record["id"])
+        created_at = record.get("created_at")
+        if isinstance(created_at, str):
+            try:
+                created_at = datetime.fromisoformat(created_at)
+            except Exception:
+                created_at = datetime.now(timezone.utc)
+        elif not isinstance(created_at, datetime):
+            created_at = datetime.now(timezone.utc)
+
+        expires_at = record.get("expires_at")
+        if isinstance(expires_at, str):
+            try:
+                expires_at = datetime.fromisoformat(expires_at)
+            except Exception:
+                expires_at = None
+
+        last_used_at = record.get("last_used_at")
+        if isinstance(last_used_at, str):
+            try:
+                last_used_at = datetime.fromisoformat(last_used_at)
+            except Exception:
+                last_used_at = None
+
+        if existing:
+            existing.name = record.get("name", existing.name)
+            existing.is_revoked = record.get("is_revoked", existing.is_revoked)
+            if last_used_at is not None:
+                existing.last_used_at = last_used_at
+            if expires_at is not None:
+                existing.expires_at = expires_at
+        else:
+            session.add(ApiKeyModel(
+                id=record["id"],
+                user_id=record["user_id"],
+                workspace_id=record.get("workspace_id"),
+                name=record.get("name", "Default API Key"),
+                key_hash=record["key_hash"],
+                key_prefix=record["key_prefix"],
+                is_revoked=record.get("is_revoked", False),
+                created_at=created_at,
+                expires_at=expires_at,
+                last_used_at=last_used_at,
+            ))
+        session.commit()
+
+
+def update_api_key_usage_in_db(key_hash: str, last_used_at: datetime) -> None:
+    """Update last_used_at timestamp for an API key."""
+    with SyncSessionLocal() as session:
+        existing = session.scalars(select(ApiKeyModel).where(ApiKeyModel.key_hash == key_hash)).first()
+        if existing:
+            existing.last_used_at = last_used_at
+            session.commit()
+
+
+def revoke_api_key_in_db(key_id_or_hash: str) -> bool:
+    """Mark an API key as revoked in database."""
+    with SyncSessionLocal() as session:
+        existing = session.get(ApiKeyModel, key_id_or_hash)
+        if not existing:
+            existing = session.scalars(select(ApiKeyModel).where(ApiKeyModel.key_hash == key_id_or_hash)).first()
+        if existing:
+            existing.is_revoked = True
+            session.commit()
+            return True
+        return False
+
+
+def delete_all_api_keys_from_db() -> None:
+    """Clear all API keys from database (for test isolation)."""
+    with SyncSessionLocal() as session:
+        session.execute(delete(ApiKeyModel))
+        session.commit()
+
+
+def get_api_key_by_hash_from_db(key_hash: str) -> Optional[Dict[str, Any]]:
+    """Retrieve API key record by key_hash from database."""
+    try:
+        with SyncSessionLocal() as session:
+            existing = session.scalars(select(ApiKeyModel).where(ApiKeyModel.key_hash == key_hash)).first()
+            return existing.to_dict() if existing else None
+    except Exception:
+        return None
+
+
+def get_api_keys_for_user_from_db(user_id: str) -> List[Dict[str, Any]]:
+    """Retrieve all API keys for a specific user from database."""
+    try:
+        with SyncSessionLocal() as session:
+            keys = session.scalars(select(ApiKeyModel).where(ApiKeyModel.user_id == user_id)).all()
+            return [k.to_dict() for k in keys]
+    except Exception:
+        return []
+
+
+def save_revoked_token_to_db(jti: str, user_id: Optional[str] = None, expires_at: Optional[datetime] = None) -> None:
+    """Save revoked token JTI or signature to database."""
+    try:
+        with SyncSessionLocal() as session:
+            existing = session.get(RevokedTokenModel, jti)
+            if not existing:
+                session.add(RevokedTokenModel(
+                    jti=jti,
+                    user_id=user_id,
+                    revoked_at=datetime.now(timezone.utc),
+                    expires_at=expires_at,
+                ))
+                session.commit()
+    except Exception:
+        pass
+
+
+def is_token_revoked_in_db(token_or_jti: str) -> bool:
+    """Check if token string or JTI exists in revoked_tokens database."""
+    if not token_or_jti:
+        return False
+    try:
+        with SyncSessionLocal() as session:
+            existing = session.get(RevokedTokenModel, token_or_jti)
+            if existing:
+                return True
+        return False
+    except Exception:
+        return False
+
+
+def delete_all_revoked_tokens_from_db() -> None:
+    """Clear all revoked tokens from database (for test isolation)."""
+    try:
+        with SyncSessionLocal() as session:
+            session.execute(delete(RevokedTokenModel))
+            session.commit()
+    except Exception:
+        pass
+
+
 
 
 def save_webhook_config_to_db(config: Dict[str, Any]) -> None:
@@ -737,3 +880,12 @@ def load_all_from_db() -> None:
             showcase._showcase_registry[sh.id] = sh.to_dict()
         for st in session.scalars(select(UserStarredShowcaseModel)).all():
             showcase._user_starred_showcase[st.user_id].add(st.showcase_id)
+
+        # 11. Security (API Keys & Revoked Tokens)
+        from strata_api.core import security as sec_core
+        for ak in session.scalars(select(ApiKeyModel)).all():
+            sec_core._api_keys_db[ak.key_hash] = ak.to_dict()
+        for rt in session.scalars(select(RevokedTokenModel)).all():
+            if rt.expires_at is None or rt.expires_at > datetime.now(timezone.utc):
+                sec_core._revoked_tokens.add(rt.jti)
+

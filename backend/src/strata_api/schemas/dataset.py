@@ -23,7 +23,7 @@ class DatasetResponse(BaseModel):
     total_columns: int = 0
     size_bytes: int = 0
     created_at: Optional[str] = None
-    quality_score: Optional[int] = None
+    quality_score: Optional[float] = None
     latest_version: Optional[str] = "v1.0.0"
     version_count: int = 1
 

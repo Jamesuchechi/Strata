@@ -12,7 +12,12 @@ from strata_api.versioning.hashing import compute_content_hash
 from strata_api.profiling import compute_column_microstats, detect_pii_columns, calculate_quality_score
 from strata_api.core.duckdb_engine import get_duckdb_engine
 from strata_api.schemas.preview import PreviewResponse, ColumnSchema
-from strata_api.routers.datasets import get_storage_dir, register_dataset_in_store
+from strata_api.routers.datasets import (
+    get_storage_dir,
+    register_dataset_in_store,
+    sanitize_storage_filename,
+    get_safe_storage_path,
+)
 
 router = APIRouter(prefix="/preview", tags=["Preview"])
 
@@ -24,7 +29,8 @@ async def preview_uploaded_file(
     current_user: UserModel = Depends(get_current_user),
 ):
     """Upload any dataset file (CSV, Excel, Parquet, JSON, SDF) and receive instant schema, virtual rows, stats, and PII checks."""
-    filename = file.filename or "uploaded_dataset"
+    raw_filename = file.filename or "uploaded_dataset"
+    filename = sanitize_storage_filename(raw_filename)
     suffix = os.path.splitext(filename)[1]
 
     # Compute content hash
@@ -58,12 +64,14 @@ async def preview_uploaded_file(
             )
 
     storage_dir = get_storage_dir()
-    stored_path = os.path.join(storage_dir, f"{content_hash[:12]}_{filename}")
+    stored_filename = f"{content_hash[:12]}_{filename}"
+    stored_path = get_safe_storage_path(storage_dir, stored_filename)
 
     # Reset cursor and save persistently to storage_dir
     file.file.seek(0)
     with open(stored_path, "wb") as f_out:
         shutil.copyfileobj(file.file, f_out)
+
 
     try:
         # Register in central datasets registry and duckdb
