@@ -886,6 +886,9 @@ def load_all_from_db() -> None:
         for ak in session.scalars(select(ApiKeyModel)).all():
             sec_core._api_keys_db[ak.key_hash] = ak.to_dict()
         for rt in session.scalars(select(RevokedTokenModel)).all():
-            if rt.expires_at is None or rt.expires_at > datetime.now(timezone.utc):
+            exp = rt.expires_at
+            if exp is not None and exp.tzinfo is None:
+                exp = exp.replace(tzinfo=timezone.utc)
+            if exp is None or exp > datetime.now(timezone.utc):
                 sec_core._revoked_tokens.add(rt.jti)
 

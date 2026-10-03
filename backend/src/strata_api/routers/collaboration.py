@@ -86,6 +86,18 @@ class CreateWorkspaceRequest(BaseModel):
     description: Optional[str] = None
 
 
+class UpdateWorkspaceRequest(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    plan: Optional[str] = None
+    default_role: Optional[str] = None
+    enforce_mfa: Optional[bool] = None
+    restrict_public_sharing: Optional[bool] = None
+    retention_days: Optional[int] = None
+    sandbox_timeout_sec: Optional[int] = None
+    sandbox_max_memory_mb: Optional[int] = None
+
+
 class InviteMemberRequest(BaseModel):
     email: str
     role: str = "Analyst"  # "Admin", "Editor", "Analyst", "Viewer"
@@ -128,6 +140,12 @@ async def create_workspace(
         "slug": slug,
         "description": req.description or "",
         "plan": "Community Free",
+        "default_role": "Analyst",
+        "enforce_mfa": False,
+        "restrict_public_sharing": False,
+        "retention_days": 30,
+        "sandbox_timeout_sec": 60,
+        "sandbox_max_memory_mb": 512,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "owner_id": current_user.id,
     }
@@ -146,6 +164,68 @@ async def create_workspace(
     save_workspace_member_to_db(member_record, ws_id)
     log_activity(ws_id, current_user.full_name, "workspace_created", f"Created workspace '{req.name}'")
     return ws
+
+
+@router.get("/{workspace_id}")
+async def get_workspace(workspace_id: str, current_user: UserModel = Depends(get_current_user)):
+    """Retrieve workspace details and settings."""
+    ws = check_workspace_access(workspace_id, current_user.id, current_user.email)
+    members = _members_db.get(workspace_id, [])
+    return {
+        **ws,
+        "member_count": len(members),
+        "is_owner": ws.get("owner_id") == current_user.id,
+    }
+
+
+@router.put("/{workspace_id}")
+async def update_workspace_settings(
+    workspace_id: str,
+    req: UpdateWorkspaceRequest,
+    current_user: UserModel = Depends(get_current_user),
+):
+    """Update workspace profile and governance settings."""
+    ws = check_workspace_access(workspace_id, current_user.id, current_user.email)
+    if req.name is not None:
+        ws["name"] = req.name.strip()
+        ws["slug"] = req.name.lower().replace(" ", "-")
+    if req.description is not None:
+        ws["description"] = req.description.strip()
+    if req.plan is not None:
+        ws["plan"] = req.plan
+    if req.default_role is not None:
+        ws["default_role"] = req.default_role
+    if req.enforce_mfa is not None:
+        ws["enforce_mfa"] = req.enforce_mfa
+    if req.restrict_public_sharing is not None:
+        ws["restrict_public_sharing"] = req.restrict_public_sharing
+    if req.retention_days is not None:
+        ws["retention_days"] = req.retention_days
+    if req.sandbox_timeout_sec is not None:
+        ws["sandbox_timeout_sec"] = req.sandbox_timeout_sec
+    if req.sandbox_max_memory_mb is not None:
+        ws["sandbox_max_memory_mb"] = req.sandbox_max_memory_mb
+
+    save_workspace_to_db(ws)
+    log_activity(workspace_id, current_user.full_name, "workspace_updated", f"Updated settings for '{ws['name']}'")
+    return {"status": "success", "workspace": ws}
+
+
+@router.delete("/{workspace_id}")
+async def delete_workspace(workspace_id: str, current_user: UserModel = Depends(get_current_user)):
+    """Delete workspace (owner only)."""
+    ws = check_workspace_access(workspace_id, current_user.id, current_user.email)
+    if ws.get("owner_id") != current_user.id and workspace_id != "ws_primary":
+        raise HTTPException(status_code=403, detail="Only workspace owner can delete the workspace")
+    if workspace_id == "ws_primary":
+        raise HTTPException(status_code=400, detail="Primary workspace cannot be deleted")
+
+    _workspaces_db.pop(workspace_id, None)
+    _members_db.pop(workspace_id, None)
+    _invitations_db.pop(workspace_id, None)
+    _dataset_permissions_db.pop(workspace_id, None)
+    return {"status": "success", "message": f"Workspace {workspace_id} deleted."}
+
 
 
 @router.get("/{workspace_id}/members")

@@ -109,6 +109,8 @@ export interface DatasetItem {
   quality_score?: number;
   latest_version?: string;
   version_count: number;
+  owner?: string;
+  workspace_id?: string;
 }
 
 export interface QueryResult {
@@ -232,8 +234,16 @@ export interface WorkspaceItem {
   slug: string;
   description?: string;
   plan: string;
+  default_role?: string;
+  enforce_mfa?: boolean;
+  restrict_public_sharing?: boolean;
+  retention_days?: number;
+  sandbox_timeout_sec?: number;
+  sandbox_max_memory_mb?: number;
   created_at: string;
   owner_id: string;
+  member_count?: number;
+  is_owner?: boolean;
 }
 
 export interface WorkspaceMember {

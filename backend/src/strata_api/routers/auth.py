@@ -36,6 +36,8 @@ from strata_api.schemas.auth import (
     TokenResponse,
     UserLoginRequest,
     UserRegisterRequest,
+    UserProfileUpdateRequest,
+    UserChangePasswordRequest,
     UserResponse,
     VerifyMagicLinkRequest,
 )
@@ -671,6 +673,58 @@ async def get_me(
 ) -> UserResponse:
     """Return profile data for the authenticated session."""
     return UserResponse.model_validate(current_user)
+
+
+@auth_router.patch(
+    "/me",
+    response_model=UserResponse,
+    summary="Update current authenticated user profile",
+)
+async def update_me(
+    payload: UserProfileUpdateRequest,
+    current_user: UserModel = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> UserResponse:
+    """Update profile attributes such as full_name or role."""
+    result = await db.execute(select(UserModel).where(UserModel.id == current_user.id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User account not found")
+
+    if payload.full_name is not None:
+        user.full_name = payload.full_name.strip()
+    if payload.role is not None:
+        user.role = payload.role.strip()
+
+    await db.commit()
+    await db.refresh(user)
+    return UserResponse.model_validate(user)
+
+
+@auth_router.post(
+    "/change-password",
+    summary="Change user password with current password verification",
+)
+async def change_password(
+    payload: UserChangePasswordRequest,
+    current_user: UserModel = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Verify current password and set a new password, incrementing token version."""
+    result = await db.execute(select(UserModel).where(UserModel.id == current_user.id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User account not found")
+
+    if not user.hashed_password or not verify_password(payload.current_password, user.hashed_password):
+        raise HTTPException(status_code=400, detail="Current password is incorrect")
+
+    user.hashed_password = hash_password(payload.new_password)
+    user.token_version = (getattr(user, "token_version", 1) or 1) + 1
+    await db.commit()
+
+    return {"status": "success", "message": "Password updated successfully"}
+
 
 
 from pydantic import BaseModel

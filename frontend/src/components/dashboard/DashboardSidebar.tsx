@@ -27,6 +27,7 @@ import {
   CreditCard,
   Globe,
   Network,
+  Settings,
 } from "lucide-react";
 import { fetchDatasets } from "@/lib/api";
 import { DatasetItem } from "@/lib/types";
@@ -159,6 +160,13 @@ export function DashboardSidebar({
       label: "Billing & Quotas",
       icon: <CreditCard className="w-4 h-4 text-emerald-600" />,
       matches: (path: string) => path.startsWith("/billing"),
+    },
+    {
+      id: "settings",
+      href: "/settings",
+      label: "Settings & Config",
+      icon: <Settings className="w-4 h-4 text-[#736B63]" />,
+      matches: (path: string) => path.startsWith("/settings"),
     },
   ];
 

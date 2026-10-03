@@ -352,3 +352,48 @@ export async function revokeApiKey(keyId: string): Promise<{ status: string; mes
   return res.json();
 }
 
+export async function updateUserProfile(payload: {
+  full_name?: string;
+  role?: string;
+}): Promise<User> {
+  const token = getStoredToken();
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+
+  const res = await fetch(`${API_BASE}/auth/me`, {
+    method: "PATCH",
+    headers,
+    credentials: "include",
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: "Failed to update profile" }));
+    throw new Error(err.detail || `Failed to update profile (${res.status})`);
+  }
+  const updated: User = await res.json();
+  setStoredUser(updated);
+  return updated;
+}
+
+export async function changeUserPassword(payload: {
+  current_password: string;
+  new_password: string;
+}): Promise<{ status: string; message: string }> {
+  const token = getStoredToken();
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+
+  const res = await fetch(`${API_BASE}/auth/change-password`, {
+    method: "POST",
+    headers,
+    credentials: "include",
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: "Failed to change password" }));
+    throw new Error(err.detail || `Failed to change password (${res.status})`);
+  }
+  return res.json();
+}
+
+

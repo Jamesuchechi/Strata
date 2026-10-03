@@ -54,6 +54,18 @@ class UserResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class UserProfileUpdateRequest(BaseModel):
+    """Payload for updating user profile."""
+    full_name: Optional[str] = Field(None, min_length=2, max_length=255, description="Updated full name")
+    role: Optional[str] = Field(None, description="Role: data_scientist, data_analyst, researcher, business, admin")
+
+
+class UserChangePasswordRequest(BaseModel):
+    """Payload for changing user password."""
+    current_password: str = Field(..., description="Current password for verification")
+    new_password: str = Field(..., min_length=8, description="New password, minimum 8 characters")
+
+
 class RefreshTokenRequest(BaseModel):
     """Payload for refreshing an access token."""
     refresh_token: Optional[str] = Field(None, description="Long-lived refresh token")
@@ -66,3 +78,4 @@ class TokenResponse(BaseModel):
     expires_in: int
     user: UserResponse
     refresh_token: Optional[str] = None
+

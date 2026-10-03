@@ -295,16 +295,32 @@ export function DashboardTopbar({
                 </div>
               </div>
 
-              <button
-                onClick={() => {
-                  alert("Settings dialog");
-                  setUserMenuOpen(false);
-                }}
+              <Link
+                href="/profile"
+                onClick={() => setUserMenuOpen(false)}
+                className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs hover:bg-[#F7F5F2] text-[#1E1915] flex items-center gap-2"
+              >
+                <UserIcon className="w-3.5 h-3.5 text-[#0061FE]" />
+                <span>My Profile & Account</span>
+              </Link>
+
+              <Link
+                href="/settings"
+                onClick={() => setUserMenuOpen(false)}
                 className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs hover:bg-[#F7F5F2] text-[#1E1915] flex items-center gap-2"
               >
                 <Settings className="w-3.5 h-3.5 text-[#736B63]" />
                 <span>Workspace Settings</span>
-              </button>
+              </Link>
+
+              <Link
+                href="/workspace"
+                onClick={() => setUserMenuOpen(false)}
+                className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs hover:bg-[#F7F5F2] text-[#1E1915] flex items-center gap-2"
+              >
+                <Building2 className="w-3.5 h-3.5 text-indigo-600" />
+                <span>Team & RBAC</span>
+              </Link>
 
               <a
                 href="https://github.com/Jamesuchechi/Strata"

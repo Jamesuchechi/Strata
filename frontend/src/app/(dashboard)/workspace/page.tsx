@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import Link from "next/link";
 import {
   Users,
   Building2,
@@ -18,6 +19,7 @@ import {
   Layers,
   Sparkles,
   Search,
+  Settings,
 } from "lucide-react";
 import {
   fetchWorkspaces,
@@ -248,6 +250,14 @@ export default function WorkspacePage() {
             <Plus className="w-4 h-4" />
           </button>
 
+          <Link
+            href="/settings"
+            className="px-3 py-1.5 rounded-xl border border-[#E8E4DF] bg-white hover:bg-[#FAF8F5] text-[#1E1915] text-xs font-semibold flex items-center gap-1.5 shadow-sm transition-colors"
+          >
+            <Settings className="w-3.5 h-3.5 text-[#0061FE]" />
+            <span>Workspace Settings</span>
+          </Link>
+
           <button
             onClick={() => setShowInviteModal(true)}
             disabled={!activeWs}
@@ -292,8 +302,15 @@ export default function WorkspacePage() {
           }`}
         >
           <Activity className="w-4 h-4" />
-          <span>Live Activity Audit Feed ({activity.length})</span>
+          <span>Activity Audit ({activity.length})</span>
         </button>
+        <Link
+          href="/settings"
+          className="py-3 border-b-2 border-transparent text-[#736B63] hover:text-[#1E1915] transition-all flex items-center gap-2 ml-auto"
+        >
+          <Settings className="w-4 h-4 text-[#0061FE]" />
+          <span>Configure Policies & Limits</span>
+        </Link>
       </div>
 
       {/* Main Content Area */}

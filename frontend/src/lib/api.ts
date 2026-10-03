@@ -421,6 +421,34 @@ export async function createWorkspace(name: string, description?: string): Promi
   return res.json();
 }
 
+export async function fetchWorkspaceDetails(workspaceId: string): Promise<import("./types").WorkspaceItem> {
+  const res = await apiFetch(`${API_BASE}/workspaces/${workspaceId}`);
+  if (!res.ok) throw new Error(`Failed to fetch workspace details (${res.status})`);
+  return res.json();
+}
+
+export async function updateWorkspaceSettings(
+  workspaceId: string,
+  settings: Partial<import("./types").WorkspaceItem>
+): Promise<{ status: string; workspace: import("./types").WorkspaceItem }> {
+  const res = await apiFetch(`${API_BASE}/workspaces/${workspaceId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(settings),
+  });
+  if (!res.ok) throw new Error(`Failed to update workspace settings (${res.status})`);
+  return res.json();
+}
+
+export async function deleteWorkspace(workspaceId: string): Promise<{ status: string; message: string }> {
+  const res = await apiFetch(`${API_BASE}/workspaces/${workspaceId}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) throw new Error(`Failed to delete workspace (${res.status})`);
+  return res.json();
+}
+
+
 export async function fetchWorkspaceMembers(workspaceId: string): Promise<{
   members: import("./types").WorkspaceMember[];
   pending_invites: import("./types").WorkspaceInvite[];
